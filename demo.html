@@ -1,0 +1,680 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Champions Threat Calc — CybertronVGC</title>
+<style>:root{--bg:#0f1720;--panel:#17212e;--line:#28374a;--ink:#e6eef7;--dim:#8ba0b6;
+--accent:#5ac8fa;--live:#2fd27a;--roll:#ffca3a;--dead:#ff5a6a;--warn:#ffb454;}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#0c131b,#0f1720);color:var(--ink);
+font:15px/1.45 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:560px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:19px;margin:2px 0 2px;letter-spacing:.2px}
+.sub{color:var(--dim);font-size:12.5px;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+label{display:block;font-size:12px;color:var(--dim);margin:0 0 5px;text-transform:uppercase;letter-spacing:.6px}
+select{width:100%;background:#0e1620;color:var(--ink);border:1px solid var(--line);
+border-radius:10px;padding:11px 12px;font-size:15px;appearance:none}
+.row{display:flex;gap:10px}.row>div{flex:1}
+.mt{margin-top:12px}
+.toggles{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:12px;font-size:13px;color:var(--dim)}
+.toggles input{transform:scale(1.15);margin-right:6px;vertical-align:-1px}
+.mini{width:auto;display:inline-block;padding:6px 8px}
+#setinfo{font-size:12.5px;color:var(--ink);line-height:1.5}
+.dim{color:var(--dim)} .small{font-size:11px} .warn{color:var(--warn);font-size:12px;margin-top:4px}
+.result{border-radius:14px;padding:18px 16px;text-align:center;border:1px solid var(--line);background:var(--panel)}
+.result.live{border-color:#1e6b48;box-shadow:inset 0 0 0 1px #1e6b48}
+.result.roll{border-color:#8a6d1f;box-shadow:inset 0 0 0 1px #8a6d1f}
+.result.dead{border-color:#7a2731;box-shadow:inset 0 0 0 1px #7a2731}
+.verdict{font-weight:800;font-size:30px;letter-spacing:1px}
+.result.live .verdict{color:var(--live)} .result.roll .verdict{color:var(--roll)} .result.dead .verdict{color:var(--dead)}
+.range{font:600 22px ui-monospace,SFMono-Regular,Menlo,monospace;margin:4px 0 2px}
+</style></head><body><div class="wrap">
+<h1>Champions Threat Calc</h1>
+<div class="sub">Reg M-B · your team vs common sets · “do I live it?” (no crit, max roll) · <b>preview build</b></div>
+
+<div class="card">
+  <div class="row">
+    <div><label>Your Pokémon</label><select id="defender"></select></div>
+    <div><label>Threat</label><select id="threat"></select></div>
+  </div>
+  <div class="mt"><label>Their move (set auto-fills)</label><select id="move"></select></div>
+  <div class="toggles">
+    <span><label style="display:inline">Weather</label>
+      <select id="weather" class="mini"><option value="none">none</option><option value="sun">sun</option><option value="rain">rain</option></select></span>
+    <span><label style="display:inline">Last Respects faints</label>
+      <select id="faints" class="mini"><option>0</option><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></span>
+    <label><input type="checkbox" id="screen">your screen up</label>
+    <label><input type="checkbox" id="intim">intimidate on them</label>
+    <label><input type="checkbox" id="tailwind">your tailwind</label>
+    <label><input type="checkbox" id="trickroom">trick room</label>
+  </div>
+  <div id="speed" class="dim small" style="margin-top:10px"></div>
+</div>
+
+<div class="card" id="setinfo"></div>
+<div class="result" id="result"></div>
+
+<div class="sub" style="margin-top:14px">This is a functional preview of the engine. The full build (speed order, reverse SP optimizer, both attack directions, full dex) is spec'd in BUILD_BRIEF.md.</div>
+</div>
+<script>
+// ===== src/typechart.js =====
+// Full 18-type effectiveness chart. CHART[attacking][defending] = multiplier.
+// Champions uses the standard modern type chart.
+const TYPES = ["Normal","Fire","Water","Electric","Grass","Ice","Fighting","Poison",
+  "Ground","Flying","Psychic","Bug","Rock","Ghost","Dragon","Dark","Steel","Fairy"];
+
+const C = {};
+for (const a of TYPES) { C[a] = {}; for (const d of TYPES) C[a][d] = 1; }
+const set = (a, pairs) => Object.assign(C[a], pairs);
+
+set("Normal",   {Rock:.5, Ghost:0, Steel:.5});
+set("Fire",     {Fire:.5, Water:.5, Grass:2, Ice:2, Bug:2, Rock:.5, Dragon:.5, Steel:2});
+set("Water",    {Fire:2, Water:.5, Grass:.5, Ground:2, Rock:2, Dragon:.5});
+set("Electric", {Water:2, Electric:.5, Grass:.5, Ground:0, Flying:2, Dragon:.5});
+set("Grass",    {Fire:.5, Water:2, Grass:.5, Poison:.5, Ground:2, Flying:.5, Bug:.5, Rock:2, Dragon:.5, Steel:.5});
+set("Ice",      {Fire:.5, Water:.5, Grass:2, Ice:.5, Ground:2, Flying:2, Dragon:2, Steel:.5});
+set("Fighting", {Normal:2, Ice:2, Poison:.5, Flying:.5, Psychic:.5, Bug:.5, Rock:2, Ghost:0, Dark:2, Steel:2, Fairy:.5});
+set("Poison",   {Grass:2, Poison:.5, Ground:.5, Rock:.5, Ghost:.5, Steel:0, Fairy:2});
+set("Ground",   {Fire:2, Electric:2, Grass:.5, Poison:2, Flying:0, Bug:.5, Rock:2, Steel:2});
+set("Flying",   {Electric:.5, Grass:2, Fighting:2, Bug:2, Rock:.5, Steel:.5});
+set("Psychic",  {Fighting:2, Poison:2, Psychic:.5, Dark:0, Steel:.5});
+set("Bug",      {Fire:.5, Grass:2, Fighting:.5, Poison:.5, Flying:.5, Psychic:2, Ghost:.5, Dark:2, Steel:.5, Fairy:.5});
+set("Rock",     {Fire:2, Ice:2, Fighting:.5, Ground:.5, Flying:2, Bug:2, Steel:.5});
+set("Ghost",    {Normal:0, Psychic:2, Ghost:2, Dark:.5});
+set("Dragon",   {Dragon:2, Steel:.5, Fairy:0});
+set("Dark",     {Fighting:.5, Psychic:2, Ghost:2, Dark:.5, Fairy:.5});
+set("Steel",    {Fire:.5, Water:.5, Electric:.5, Ice:2, Rock:2, Steel:.5, Fairy:2});
+set("Fairy",    {Fire:.5, Fighting:2, Poison:.5, Dragon:2, Dark:2, Steel:.5});
+
+const CHART = C;
+
+// Product of effectiveness across a defender's (1 or 2) types.
+function typeMult(moveType, defTypes) {
+  return defTypes.reduce((m, d) => m * CHART[moveType][d], 1);
+}
+
+
+// ===== src/engine.js =====
+// ===========================================================================
+// Pokémon Champions damage engine (Regulation M-B)
+// Ported from a Python reference that was cross-checked against in-game stats.
+// Level 50, IVs fixed at 31, Stat Points (SP): 0–32 per stat, 66 total.
+// Gimmick: Mega Evolution only (no Tera / Dynamax in Reg M-B).
+// ===========================================================================
+
+
+// --- Champions stat formula (L50, 31 IVs baked in) -------------------------
+//   HP    = Base + 75 + SP
+//   Other = floor((Base + 20 + SP) * Nature)      Nature ∈ {1.1, 1.0, 0.9}
+function statHP(base, sp)        { return base + 75 + sp; }
+function statOther(base, sp, nat){ return Math.floor((base + 20 + sp) * nat); }
+
+// Nature helper: returns {atk,def,spa,spd,spe} multipliers from "+X -Y".
+const STAT_KEYS = ["atk","def","spa","spd","spe"];
+function natureMults(plus, minus) {
+  const m = {atk:1, def:1, spa:1, spd:1, spe:1};
+  if (plus  && STAT_KEYS.includes(plus))  m[plus]  = 1.1;
+  if (minus && STAT_KEYS.includes(minus)) m[minus] = 0.9;
+  return m;
+}
+
+// Compute a full stat line from base stats + SP spread + nature.
+// base/sp: {hp,atk,def,spa,spd,spe}; nature: {plus, minus} using atk/def/spa/spd/spe
+function computeStats(base, sp, nature = {}) {
+  const nm = natureMults(nature.plus, nature.minus);
+  return {
+    hp:  statHP(base.hp,  sp.hp ?? 0),
+    atk: statOther(base.atk, sp.atk ?? 0, nm.atk),
+    def: statOther(base.def, sp.def ?? 0, nm.def),
+    spa: statOther(base.spa, sp.spa ?? 0, nm.spa),
+    spd: statOther(base.spd, sp.spd ?? 0, nm.spd),
+    spe: statOther(base.spe, sp.spe ?? 0, nm.spe),
+  };
+}
+
+// Pokémon "round half down" used on damage modifiers.
+function pokeRound(x) {
+  return (x - Math.floor(x)) <= 0.5 ? Math.floor(x) : Math.floor(x) + 1;
+}
+
+// ---------------------------------------------------------------------------
+// Damage. Returns { min, max, minPct, maxPct, typeMult, koChance }.
+// Set opts to model the field. `attackStat`/`defStat` are already-computed stats.
+// ---------------------------------------------------------------------------
+function calcDamage({
+  power,               // move base power (after any Last-Respects style scaling)
+  moveType,            // e.g. "Fire"
+  category,            // "phys" | "spec"
+  attackerTypes,       // ["Fire","Flying"]
+  defenderTypes,       // ["Grass","Fairy"]
+  attackStat,          // number (already computed Atk or SpA)
+  defStat,             // number (already computed Def or SpD)
+  defHP,               // number (defender max HP)
+  spread = false,      // doubles spread move → x0.75
+  weather = null,      // "sun" | "rain" | null
+  stabMult = 1.5,      // 2.0 if Adaptability
+  hasSTAB = null,      // override; else auto from attackerTypes.includes(moveType)
+  lifeOrb = false,     // x1.3
+  toughClaws = false,  // contact move x1.3 (pass true only for contact moves)
+  screen = false,      // Reflect/Light Screen halves in doubles → x0.667 (0.5 in singles)
+  singles = false,     // affects screen multiplier
+  otherMult = 1.0,     // catch-all (items like Fairy Feather 1.2, Pixilate 1.2, berries 0.5, etc.)
+  immune = false,      // ability immunity (e.g. Levitate vs Ground) → 0 damage
+}) {
+  const tm = immune ? 0 : typeMult(moveType, defenderTypes);
+  if (tm === 0 || power <= 0) {
+    return { min:0, max:0, minPct:0, maxPct:0, typeMult:0, koChance:"immune/none" };
+  }
+  const L = 50;
+  let base = Math.floor(Math.floor(Math.floor((2*L/5 + 2) * power * attackStat / defStat) / 50) + 2);
+
+  let mod = base;
+  if (spread) mod = pokeRound(mod * 0.75);
+  if (weather === "sun")  { if (moveType==="Fire")  mod = pokeRound(mod*1.5); if (moveType==="Water") mod = pokeRound(mod*0.5); }
+  if (weather === "rain") { if (moveType==="Water") mod = pokeRound(mod*1.5); if (moveType==="Fire")  mod = pokeRound(mod*0.5); }
+
+  const stab = (hasSTAB ?? attackerTypes.includes(moveType)) ? stabMult : 1.0;
+
+  const rolls = [];
+  for (let r = 85; r <= 100; r++) {
+    let d = Math.floor(mod * r / 100);
+    if (stab !== 1.0)       d = pokeRound(d * stab);
+    d = Math.floor(d * tm);
+    if (lifeOrb)            d = pokeRound(d * 5324 / 4096);   // 1.3
+    if (toughClaws)         d = pokeRound(d * 5324 / 4096);   // 1.3
+    if (screen)             d = pokeRound(d * (singles ? 0.5 : 2732/4096)); // 0.667 in doubles
+    if (otherMult !== 1.0)  d = pokeRound(d * otherMult);
+    rolls.push(Math.max(1, d));
+  }
+  const min = rolls[0], max = rolls[rolls.length - 1];
+  const koCount = rolls.filter(d => d >= defHP).length;
+  let koChance;
+  if (min >= defHP)      koChance = "guaranteed KO";
+  else if (max < defHP)  koChance = "guaranteed survive";
+  else                   koChance = `${Math.round(100*koCount/16)}% to KO`;
+
+  return {
+    min, max,
+    minPct: +(100*min/defHP).toFixed(1),
+    maxPct: +(100*max/defHP).toFixed(1),
+    typeMult: tm,
+    koChance,
+  };
+}
+
+// Held items that boost a specific move type by 1.2x.
+const ITEM_TYPE_BOOST = {
+  "Black Glasses":"Dark", "Fairy Feather":"Fairy", "Charcoal":"Fire",
+  "Mystic Water":"Water", "Magnet":"Electric", "Miracle Seed":"Grass",
+  "Never-Melt Ice":"Ice", "Sharp Beak":"Flying", "Poison Barb":"Poison",
+  "Soft Sand":"Ground", "Hard Stone":"Rock", "Silver Powder":"Bug",
+  "Spell Tag":"Ghost", "Dragon Fang":"Dragon", "Metal Coat":"Steel",
+  "Twisted Spoon":"Psychic", "Black Belt":"Fighting", "Silk Scarf":"Normal",
+};
+
+// Convenience: given an attacker record + a defender record + a move, calc.
+// (See data/*.js for record shapes.) This is what the UI calls per matchup.
+function matchup(attacker, defender, move, field = {}) {
+  const aStats = attacker.stats ?? computeStats(attacker.base, attacker.sp, attacker.nature);
+  const dStats = defender.stats ?? computeStats(defender.base, defender.sp, defender.nature);
+  const category = move.category;
+  // field.atkMult lets the UI model Intimidate (0.667), Swords Dance (2.0), etc.
+  const atkMult = field.atkMult ?? 1;
+  const attackStat = Math.floor((category === "phys" ? aStats.atk : aStats.spa) * atkMult);
+  const defStat    = category === "phys" ? dStats.def : dStats.spd;
+
+  // ability-driven type change (Pixilate/Aerilate/Refrigerate/Galvanize on Normal moves)
+  let moveType = move.type;
+  let power = move.power;
+  let otherMult = move.otherMult ?? 1.0;
+
+  // Weather Ball: Normal/50 normally; becomes the weather's type at 100 BP in weather.
+  if (move.weatherBall) {
+    const w = field.weather ?? attacker.setsWeather ?? null;
+    const map = { sun:"Fire", rain:"Water", sand:"Rock", snow:"Ice" };
+    if (w && map[w]) { moveType = map[w]; power = 100; }
+    else { moveType = "Normal"; power = 50; }
+  }
+
+  if (attacker.ability === "Pixilate" && moveType === "Normal") { moveType = "Fairy"; otherMult *= 1.2; }
+
+  // Type-boosting held items (Fairy Feather, Black Glasses, ...) → 1.2x
+  if (ITEM_TYPE_BOOST[attacker.item] === moveType) otherMult *= 1.2;
+
+  const immune = (defender.immuneTypes ?? []).includes(moveType);
+
+  return calcDamage({
+    power,
+    moveType,
+    category,
+    attackerTypes: attacker.types,
+    defenderTypes: defender.types,
+    attackStat, defStat, defHP: dStats.hp,
+    spread: !!move.spread && !field.singles,
+    weather: field.weather ?? attacker.setsWeather ?? null,
+    stabMult: attacker.ability === "Adaptability" ? 2.0 : 1.5,
+    lifeOrb: attacker.item === "Life Orb",
+    toughClaws: attacker.ability === "Tough Claws" && !!move.contact,
+    screen: !!field.screen,
+    singles: !!field.singles,
+    otherMult,
+    immune,
+  });
+}
+
+
+// ===== src/data/moves.js =====
+// Common Reg M-B moves. power = base power; spread = hits both foes in doubles
+// (x0.75); contact = eligible for Tough Claws; otherMult = fixed extra modifier
+// (e.g. item/ability bonuses baked into a specific move on a specific set).
+// Verify/extend against pokemon-zone move data when adding new entries.
+const MOVES = {
+  // Fire
+  "Heat Wave":     { type:"Fire",     category:"spec", power:95,  spread:true },
+  "Overheat":      { type:"Fire",     category:"spec", power:130 },
+  "Flamethrower":  { type:"Fire",     category:"spec", power:90 },
+  "Flare Blitz":   { type:"Fire",     category:"phys", power:120, contact:true },
+  "Blaze Kick":    { type:"Fire",     category:"phys", power:85,  contact:true },
+  // Flying
+  "Air Slash":     { type:"Flying",   category:"spec", power:75 },
+  "Weather Ball":  { type:"Normal",   category:"spec", power:50, weatherBall:true,
+                     note:"Normal/50 normally; becomes weather type at 100 BP (sun→Fire, rain→Water, sand→Rock, snow→Ice)" },
+  "Brave Bird":    { type:"Flying",   category:"phys", power:120, contact:true },
+  "Dual Wingbeat": { type:"Flying",   category:"phys", power:40,  contact:true, note:"hits twice" },
+  "Hurricane":     { type:"Flying",   category:"spec", power:110 },
+  // Fighting
+  "Close Combat":  { type:"Fighting", category:"phys", power:120, contact:true },
+  "Low Kick":      { type:"Fighting", category:"phys", power:60,  contact:true, note:"scales with target weight" },
+  // Ground
+  "Earthquake":    { type:"Ground",   category:"phys", power:100, spread:true },
+  "High Horsepower":{type:"Ground",   category:"phys", power:95,  contact:true },
+  // Rock
+  "Rock Slide":    { type:"Rock",     category:"phys", power:75,  spread:true },
+  // Water
+  "Wave Crash":    { type:"Water",    category:"phys", power:120, contact:true },
+  "Aqua Jet":      { type:"Water",    category:"phys", power:40,  contact:true, priority:1 },
+  "Flip Turn":     { type:"Water",    category:"phys", power:60,  contact:true },
+  "Surf":          { type:"Water",    category:"spec", power:90,  spread:true },
+  // Ghost
+  "Last Respects": { type:"Ghost",    category:"phys", power:100, scaling:"last_respects",
+                     note:"50 + 50 per fainted ally on user's side; default here ≈1 fainted" },
+  "Shadow Ball":   { type:"Ghost",    category:"spec", power:80 },
+  // Dark
+  "Kowtow Cleave": { type:"Dark",     category:"phys", power:85,  contact:true, note:"bypasses accuracy checks" },
+  "Sucker Punch":  { type:"Dark",     category:"phys", power:70,  contact:true, priority:1, note:"fails if target isn't attacking" },
+  "Knock Off":     { type:"Dark",     category:"phys", power:65,  contact:true, note:"x1.5 (97.5) if target holds a removable item" },
+  "Throat Chop":   { type:"Dark",     category:"phys", power:80,  contact:true },
+  // Fairy / Normal (Pixilate)
+  "Hyper Voice":   { type:"Normal",   category:"spec", power:90,  spread:true, note:"becomes Fairy under Pixilate" },
+  "Moonblast":     { type:"Fairy",    category:"spec", power:95 },
+  "Dazzling Gleam":{ type:"Fairy",    category:"spec", power:80,  spread:true },
+  // Poison
+  "Dire Claw":     { type:"Poison",   category:"phys", power:80,  contact:true },
+  "Sludge Bomb":   { type:"Poison",   category:"spec", power:90 },
+  // Steel
+  "Make It Rain":  { type:"Steel",    category:"spec", power:120, spread:true, note:"lowers user SpA after use" },
+  "Iron Head":     { type:"Steel",    category:"phys", power:80,  contact:true },
+  "Flash Cannon":  { type:"Steel",    category:"spec", power:80 },
+  "Meteor Mash":   { type:"Steel",    category:"phys", power:90,  contact:true },
+  "Bullet Punch":  { type:"Steel",    category:"phys", power:40,  contact:true, priority:1 },
+  // Electric
+  "Electro Shot":  { type:"Electric", category:"spec", power:130, note:"charges (instant in rain)" },
+  "Thunderbolt":   { type:"Electric", category:"spec", power:90 },
+  // Dragon
+  "Dragon Claw":   { type:"Dragon",   category:"phys", power:80,  contact:true },
+  "Dragon Pulse":  { type:"Dragon",   category:"spec", power:85 },
+  // Ice
+  "Ice Punch":     { type:"Ice",      category:"phys", power:75,  contact:true },
+  // Psychic / Rock (yours)
+  "Psychic":       { type:"Psychic",  category:"spec", power:90 },
+  "Power Gem":     { type:"Rock",     category:"spec", power:80 },
+  "Earth Power":   { type:"Ground",   category:"spec", power:90 },
+};
+
+// Adjust a move's effective power for scaling moves.
+function movePower(move, ctx = {}) {
+  if (move.scaling === "last_respects") return 50 + 50 * (ctx.faintedAllies ?? 1);
+  return move.power;
+}
+
+
+// ===== src/data/team.js =====
+// Edon's team ("CybertronVGC", Slot 10, Team ID G3XYDBBC22).
+// Stats DECODED FROM THE IN-GAME STAT SCREEN and re-derived through the Champions
+// formula (every mon sums to 66 SP — the read is verified). For the two Mega mons,
+// `base` is the MEGA form's base stats (its in-battle profile); `baseForm` keeps the
+// pre-Mega numbers for reference. Natures use atk/def/spa/spd/spe keys.
+const TEAM = [
+  {
+    name: "Staraptor", mega: "Mega Staraptor",
+    types: ["Fighting","Flying"],                 // Mega typing (base form is Normal/Flying)
+    base:  { hp:85, atk:140, def:100, spa:60, spd:90, spe:110 },
+    baseForm: { hp:85, atk:120, def:70, spa:50, spd:60, spe:100 },
+    sp:    { hp:31, atk:1, def:0, spa:0, spd:2, spe:32 },
+    nature:{ plus:"spe", minus:"spa" },           // Jolly
+    item:  "Staraptite", ability:"Contrary",      // Intimidate as base form on entry
+    immuneTypes: ["Ground"],
+    moves: ["Close Combat","Brave Bird","Roost","Protect"],
+    note:  "Contrary + Close Combat setup sweeper; Intimidate on entry before Mega.",
+  },
+  {
+    name: "Glimmora",
+    types: ["Rock","Poison"],
+    base:  { hp:83, atk:55, def:90, spa:130, spd:81, spe:86 },
+    sp:    { hp:1, atk:0, def:1, spa:32, spd:0, spe:32 },
+    nature:{ plus:"spa", minus:"atk" },           // Modest
+    item:  "Focus Sash", ability:"Toxic Debris",
+    moves: ["Power Gem","Sludge Bomb","Earth Power","Spiky Shield"],
+    note:  "Focus Sash lead; survives any single hit from full HP.",
+  },
+  {
+    name: "Whimsicott",
+    types: ["Grass","Fairy"],
+    base:  { hp:60, atk:67, def:85, spa:77, spd:75, spe:116 },
+    sp:    { hp:28, atk:0, def:32, spa:0, spd:0, spe:6 },
+    nature:{ plus:"spe", minus:"atk" },           // Timid
+    item:  "Occa Berry", ability:"Prankster",     // Occa halves one super-effective Fire hit
+    berry: { type:"Fire", superEffOnly:true, mult:0.5 },
+    moves: ["Tailwind","Moonblast","Charm","Light Screen"],
+    note:  "Prankster speed control / screens; not a tank.",
+  },
+  {
+    name: "Kingambit",
+    types: ["Dark","Steel"],
+    base:  { hp:100, atk:135, def:120, spa:60, spd:85, spe:50 },
+    sp:    { hp:32, atk:25, def:2, spa:0, spd:6, spe:1 },
+    nature:{ plus:"atk", minus:"spa" },           // Adamant
+    item:  "Chople Berry", ability:"Defiant",     // Chople halves one super-effective Fighting hit
+    berry: { type:"Fighting", superEffOnly:true, mult:0.5 },
+    moves: ["Kowtow Cleave","Iron Head","Low Kick","Sucker Punch"],
+    note:  "Physical wall + Sucker Punch priority; specially frail (SpD 111).",
+  },
+  {
+    name: "Garchomp",
+    types: ["Dragon","Ground"],
+    base:  { hp:108, atk:130, def:95, spa:80, spd:85, spe:102 },
+    sp:    { hp:2, atk:32, def:0, spa:0, spd:0, spe:32 },
+    nature:{ plus:"spe", minus:"spa" },           // Jolly
+    item:  "Life Orb", ability:"Rough Skin",
+    moves: ["Earthquake","Dragon Claw","Rock Slide","Protect"],
+    note:  "Life Orb spread attacker.",
+  },
+  {
+    name: "Delphox", mega: "Mega Delphox",
+    types: ["Fire","Psychic"],
+    base:  { hp:75, atk:69, def:72, spa:159, spd:125, spe:134 },  // Mega base stats
+    baseForm: { hp:75, atk:69, def:72, spa:114, spd:100, spe:104 },
+    sp:    { hp:1, atk:0, def:2, spa:31, spd:0, spe:32 },
+    nature:{ plus:"spe", minus:"atk" },           // Timid
+    item:  "Delphoxite", ability:"Levitate",      // Mega ability = Levitate (Ground immune)
+    immuneTypes: ["Ground"],
+    moves: ["Heat Wave","Psychic","Substitute","Protect"],
+    note:  "Excellent special wall (SpD 145) but very frail physically (Def 94).",
+  },
+];
+
+
+// ===== src/speed.js =====
+// ===========================================================================
+// Speed / turn order (Reg M-B doubles). Deterministic given known stats + field.
+// This answers "do I outspeed X right now, and who moves first."
+// ===========================================================================
+
+// Stat-stage multiplier (-6..+6), used for Icy Wind / Electroweb drops, boosts.
+function stageMult(stage) {
+  return stage >= 0 ? (2 + stage) / 2 : 2 / (2 - stage);
+}
+
+// Effective in-battle speed for one mon given the field.
+// mon: { spe (computed Spe stat), item, ability, status, side, stages:{spe}, unburdened }
+// field: { tailwind:[sides...], trickRoom:bool, weather }
+function effectiveSpeed(mon, field = {}) {
+  let s = mon.spe;
+  s = Math.floor(s * stageMult(mon.stages?.spe ?? 0));
+  const w = field.weather;
+  if ((mon.ability === "Swift Swim"  && w === "rain") ||
+      (mon.ability === "Chlorophyll" && w === "sun")  ||
+      (mon.ability === "Sand Rush"   && w === "sand") ||
+      (mon.ability === "Slush Rush"  && w === "snow")) s = Math.floor(s * 2);
+  if (mon.ability === "Unburden" && mon.unburdened) s = Math.floor(s * 2);
+  if (mon.item === "Choice Scarf") s = Math.floor(s * 1.5);
+  if (field.tailwind && field.tailwind.includes(mon.side)) s = Math.floor(s * 2);
+  if (mon.status === "par") s = Math.floor(s * 0.5);
+  return s;
+}
+
+// Who acts first between two mons, assuming equal move priority.
+// Returns { first:"a"|"b"|"tie", aSpeed, bSpeed }.
+function faster(a, b, field = {}) {
+  const sa = effectiveSpeed(a, field), sb = effectiveSpeed(b, field);
+  if (sa === sb) return { first: "tie", aSpeed: sa, bSpeed: sb };
+  const aFirst = field.trickRoom ? sa < sb : sa > sb;   // Trick Room: slower goes first
+  return { first: aFirst ? "a" : "b", aSpeed: sa, bSpeed: sb };
+}
+
+// Full turn order for any number of actions.
+// actions: [{ id, mon, priority }]  (priority default 0; Prankster status +1, etc.)
+// Sorts by priority bracket, then speed (reversed under Trick Room). Flags ties.
+function turnOrder(actions, field = {}) {
+  const withSpeed = actions.map(a => ({
+    ...a,
+    priority: a.priority ?? 0,
+    speed: effectiveSpeed(a.mon, field),
+  }));
+  withSpeed.sort((x, y) => {
+    if (x.priority !== y.priority) return y.priority - x.priority;       // higher priority first
+    if (x.speed === y.speed) return 0;                                   // tie (order unresolved)
+    return field.trickRoom ? x.speed - y.speed : y.speed - x.speed;      // TR reverses
+  });
+  // mark ties (same priority & speed as a neighbor)
+  for (let i = 0; i < withSpeed.length; i++) {
+    const a = withSpeed[i];
+    a.tie = withSpeed.some((b, j) => j !== i && b.priority === a.priority && b.speed === a.speed);
+  }
+  return withSpeed;
+}
+
+// Speed benchmarks for a mon across common field states (for a speed-tier table).
+function benchmarks(mon) {
+  const base  = effectiveSpeed(mon, {});
+  return {
+    base,
+    scarf:     effectiveSpeed({ ...mon, item: "Choice Scarf" }, {}),
+    tailwind:  effectiveSpeed({ ...mon, side: "me" }, { tailwind: ["me"] }),
+    minus1:    effectiveSpeed({ ...mon, stages: { spe: -1 } }, {}),   // after one Icy Wind
+    paralyzed: effectiveSpeed({ ...mon, status: "par" }, {}),
+  };
+}
+
+
+// ===== src/data/threats.js =====
+// Common Reg M-B (Season 4) threats with their most-common competitive set, so
+// selecting a threat auto-populates item / ability / nature / spread / moves —
+// the way ChampDex, Pikalytics, etc. do it.
+//
+// SOURCING & ACCURACY: species/items/abilities/moves reflect current usage
+// (pokemon-zone.com/champions, pikalytics.com — Reg M-B, updated ~Jul 2026).
+// `base` = the IN-BATTLE form's base stats (Mega where the set Megas). `spread`
+// values are the standard competitive spread for the role; where a threat commonly
+// runs a bulkier spread, real damage is LOWER than a max-offense assumption — flagged
+// in `note`. TREAT SPREADS AS EDITABLE and re-check usage when the meta shifts.
+//
+// `conf`: "high" = species/set well-established; "std" = spread is the standard
+// convention rather than a scraped exact spread (verify for tight calcs).
+const THREATS = [
+  {
+    id:"charizard-y", name:"Mega Charizard Y", types:["Fire","Flying"],
+    base:{ hp:78, atk:104, def:78, spa:159, spd:115, spe:100 },
+    sp:{ hp:2, spa:32, spe:32 }, nature:{ plus:"spa", minus:"atk" },      // Modest
+    item:"Charizardite Y", ability:"Drought", setsWeather:"sun",
+    moves:["Heat Wave","Weather Ball","Air Slash","Overheat","Protect"], defaultMove:"Heat Wave",
+    conf:"std", note:"Drought = sun. Weather Ball becomes Fire/100 in sun (more common than Overheat). Sometimes Timid.",
+  },
+  {
+    id:"garchomp", name:"Garchomp", types:["Dragon","Ground"],
+    base:{ hp:108, atk:130, def:95, spa:80, spd:85, spe:102 },
+    sp:{ hp:2, atk:32, spe:32 }, nature:{ plus:"spe", minus:"spa" },      // Jolly
+    item:"Life Orb", ability:"Rough Skin",
+    moves:["Earthquake","Rock Slide","Dragon Claw","Protect"], defaultMove:"Earthquake",
+    conf:"high", note:"Also runs Choice Scarf, Roseli Berry, Sitrus. Adamant variants hit harder.",
+  },
+  {
+    id:"basculegion", name:"Basculegion (Scarf)", types:["Water","Ghost"],
+    base:{ hp:120, atk:112, def:65, spa:80, spd:75, spe:78 },
+    sp:{ hp:2, atk:32, spe:32 }, nature:{ plus:"atk", minus:"spa" },      // Adamant (Jolly also common)
+    item:"Choice Scarf", ability:"Adaptability",
+    moves:["Wave Crash","Last Respects","Aqua Jet","Flip Turn"], defaultMove:"Wave Crash",
+    conf:"high", note:"Adaptability = 2x STAB. Scarf outspeeds; Aqua Jet is priority. Your worst matchup.",
+  },
+  {
+    id:"sylveon", name:"Sylveon", types:["Fairy"],
+    base:{ hp:95, atk:65, def:65, spa:110, spd:130, spe:60 },
+    sp:{ hp:32, spa:32, spd:2 }, nature:{ plus:"spa", minus:"atk" },      // Modest, bulky
+    item:"Fairy Feather", ability:"Pixilate",
+    moves:["Hyper Voice","Moonblast","Dazzling Gleam","Protect"], defaultMove:"Hyper Voice",
+    conf:"std", note:"Pixilate makes Hyper Voice a Fairy SPREAD move; Fairy Feather adds 1.2x.",
+  },
+  {
+    id:"kingambit", name:"Kingambit", types:["Dark","Steel"],
+    base:{ hp:100, atk:135, def:120, spa:60, spd:85, spe:50 },
+    sp:{ hp:32, atk:32, spd:2 }, nature:{ plus:"atk", minus:"spa" },      // Adamant
+    item:"Black Glasses", ability:"Defiant",
+    moves:["Kowtow Cleave","Sucker Punch","Iron Head","Low Kick"], defaultMove:"Kowtow Cleave",
+    conf:"high", note:"Supreme Overlord scales as its team faints. Black Glasses = 1.2x Dark. Also Chople.",
+  },
+  {
+    id:"incineroar", name:"Incineroar", types:["Fire","Dark"],
+    base:{ hp:95, atk:115, def:90, spa:80, spd:90, spe:60 },
+    sp:{ hp:32, atk:32, spd:2 }, nature:{ plus:"atk", minus:"spa" },      // Adamant (offensive ref)
+    item:"Sitrus Berry", ability:"Intimidate",
+    moves:["Flare Blitz","Knock Off","Fake Out","Parting Shot"], defaultMove:"Flare Blitz",
+    conf:"std", note:"USUALLY BULKY (hp/def) — offensive spread here is an upper bound on its damage.",
+  },
+  {
+    id:"sneasler", name:"Sneasler", types:["Fighting","Poison"],
+    base:{ hp:80, atk:130, def:60, spa:40, spd:80, spe:120 },
+    sp:{ hp:2, atk:32, spe:32 }, nature:{ plus:"atk", minus:"spa" },      // Adamant
+    item:"Focus Sash", ability:"Unburden",
+    moves:["Close Combat","Dire Claw","Fake Out","Protect"], defaultMove:"Close Combat",
+    conf:"high", note:"Close Combat is 4x on your Kingambit (2x even through Chople).",
+  },
+  {
+    id:"aerodactyl", name:"Mega Aerodactyl", types:["Rock","Flying"],
+    base:{ hp:80, atk:135, def:85, spa:70, spd:95, spe:150 },
+    sp:{ hp:2, atk:32, spe:32 }, nature:{ plus:"spe", minus:"spa" },      // Jolly
+    item:"Aerodactylite", ability:"Tough Claws",
+    moves:["Rock Slide","Dual Wingbeat","Ice Fang","Protect"], defaultMove:"Rock Slide",
+    conf:"std", note:"Extremely fast; Rock Slide pressures your Staraptor/Delphox (both 2x Rock).",
+  },
+  {
+    id:"gholdengo", name:"Gholdengo (LO)", types:["Steel","Ghost"],
+    base:{ hp:87, atk:60, def:95, spa:133, spd:91, spe:84 },
+    sp:{ hp:2, spa:32, spe:32 }, nature:{ plus:"spa", minus:"atk" },      // Modest
+    item:"Life Orb", ability:"Good as Gold",
+    moves:["Make It Rain","Shadow Ball","Nasty Plot","Protect"], defaultMove:"Make It Rain",
+    conf:"high", note:"Make It Rain is a Steel SPREAD nuke; 2x on Whimsicott and Glimmora.",
+  },
+  {
+    id:"archaludon", name:"Archaludon", types:["Steel","Dragon"],
+    base:{ hp:90, atk:105, def:130, spa:125, spd:85, spe:85 },
+    sp:{ hp:2, spa:32, spe:32 }, nature:{ plus:"spa", minus:"atk" },      // Modest
+    item:"Leftovers", ability:"Stamina",
+    moves:["Electro Shot","Dragon Pulse","Flash Cannon","Protect"], defaultMove:"Electro Shot",
+    conf:"std", note:"Electro Shot is huge; charges unless in rain. Electric 2x on your Staraptor.",
+  },
+];
+
+// ---- Demo UI (vanilla). Uses globals from the bundled engine + data. ----
+const $ = (id) => document.getElementById(id);
+const teamByName = Object.fromEntries(TEAM.map(m => [m.name, m]));
+
+function fill(sel, items, val = (x)=>x, label = (x)=>x) {
+  sel.innerHTML = "";
+  for (const it of items) {
+    const o = document.createElement("option");
+    o.value = val(it); o.textContent = label(it); sel.appendChild(o);
+  }
+}
+
+const defSel = $("defender"), thrSel = $("threat"), moveSel = $("move");
+fill(defSel, TEAM, m=>m.name, m=>(m.mega ?? m.name));
+fill(thrSel, THREATS, t=>t.id, t=>t.name);
+
+function currentThreat(){ return THREATS.find(t=>t.id===thrSel.value); }
+
+function refreshMoves(){
+  const t = currentThreat();
+  fill(moveSel, t.moves, m=>m, m=>m);
+  moveSel.value = t.defaultMove ?? t.moves[0];
+  // auto-set weather from the threat (e.g. Charizard Y → sun)
+  $("weather").value = t.setsWeather ?? "none";
+  renderSet(t);
+  calc();
+}
+
+function renderSet(t){
+  const s = computeStats(t.base, t.sp, t.nature);
+  const nat = (t.nature.plus?`+${t.nature.plus} `:"") + (t.nature.minus?`-${t.nature.minus}`:"") || "neutral";
+  $("setinfo").innerHTML =
+    `<b>${t.name}</b> · ${t.item} · ${t.ability} · ${nat}` +
+    `<br><span class="dim">stats</span> ${s.hp}/${s.atk}/${s.def}/${s.spa}/${s.spd}/${s.spe}` +
+    (t.note ? `<br><span class="dim">${t.note}</span>` : "") +
+    (t.conf==="std" ? `<br><span class="warn">spread = standard convention — verify for tight calcs</span>` : "");
+}
+
+function calc(){
+  const d = teamByName[defSel.value];
+  const t = currentThreat();
+  const mv = { ...MOVES[moveSel.value], name: moveSel.value };
+  mv.power = movePower(mv, { faintedAllies: +$("faints").value });
+
+  const field = {
+    weather: $("weather").value === "none" ? null : $("weather").value,
+    screen: $("screen").checked,
+    atkMult: $("intim").checked && mv.category === "phys" ? 2/3 : 1,
+  };
+  const r = matchup(t, d, mv, field);
+
+  const dStats = computeStats(d.base, d.sp, d.nature);
+  let note = "";
+  // apply your defensive berry (Occa/Chople) if this hit triggers it
+  if (d.berry && d.berry.type === (t.ability==="Pixilate"&&mv.type==="Normal"?"Fairy":mv.type)
+      && (!d.berry.superEffOnly || r.typeMult > 1)) {
+    const eff = Math.max(1, Math.round(r.max * d.berry.mult));
+    note = `${d.name}'s berry halves this → ${(100*eff/dStats.hp).toFixed(0)}% max`;
+  }
+  if (d.item === "Focus Sash") note = "Focus Sash: survives one hit from full HP";
+
+  // speed order between your mon and the threat, given field
+  const field2 = { weather: field.weather, trickRoom: $("trickroom").checked,
+                   tailwind: $("tailwind").checked ? ["me"] : [] };
+  const meMon  = { spe: dStats.spe, side:"me",  item:d.item };
+  const oppMon = { spe: computeStats(t.base,t.sp,t.nature).spe, side:"opp", item:t.item };
+  const fr = faster(meMon, oppMon, field2);
+  const who = fr.first==="tie" ? "SPEED TIE (50/50)" :
+              fr.first==="a" ? `you outspeed (${fr.aSpeed} vs ${fr.bSpeed})`
+                             : `they outspeed (${fr.bSpeed} vs ${fr.aSpeed})`;
+  $("speed").textContent = `Speed: ${who}${field2.trickRoom?" · under Trick Room":""}${field2.tailwind.length?" · your Tailwind":""}`;
+
+  const box = $("result");
+  let verdict, cls;
+  if (d.item === "Focus Sash") { verdict = "LIVES (Sash)"; cls = "live"; }
+  else if (r.typeMult === 0)   { verdict = "IMMUNE"; cls = "live"; }
+  else if (r.maxPct < 100)     { verdict = "LIVES"; cls = "live"; }
+  else if (r.minPct >= 100)    { verdict = "DEAD"; cls = "dead"; }
+  else                         { verdict = "ROLL"; cls = "roll"; }
+
+  box.className = "result " + cls;
+  box.innerHTML =
+    `<div class="verdict">${verdict}</div>` +
+    (r.typeMult===0 ? `<div class="range">no effect</div>` :
+      `<div class="range">${r.minPct}% – ${r.maxPct}%</div>
+       <div class="dim">${r.min}–${r.max} dmg vs ${dStats.hp} HP · x${r.typeMult} · ${r.koChance}</div>`) +
+    (note ? `<div class="warn">${note}</div>` : "") +
+    `<div class="dim small">no crit · max roll assumes 100% · ${field.weather??"no weather"}${field.screen?" · screen":""}${$("intim").checked?" · intimidate":""}</div>`;
+}
+
+["defender","move","weather","screen","intim","faints","tailwind","trickroom"].forEach(id => $(id).addEventListener("input", calc));
+thrSel.addEventListener("input", refreshMoves);
+refreshMoves();
+
+</script></body></html>

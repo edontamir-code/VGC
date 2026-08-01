@@ -1,0 +1,31 @@
+{
+  "name": "champions-tool",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Live battle assistant for Pokemon Champions (Reg M-B) doubles",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "node test.mjs && node test-battle.mjs && node test-plan.mjs && node test-input.mjs && node test-switch.mjs && node test-abilities.mjs",
+    "test:abilities": "node test-abilities.mjs",
+    "test:switch": "node test-switch.mjs",
+    "test:input": "node test-input.mjs",
+    "test:engine": "node test.mjs",
+    "test:battle": "node test-battle.mjs",
+    "test:plan": "node test-plan.mjs",
+    "demo": "node build/bundle.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

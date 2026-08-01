@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output (Vercel rebuilds this from source on every deploy)
+dist/
+
+# Local env / editor
+.env
+.env.local
+.vercel
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+# Scratch files
+*.tmp.mjs

@@ -1,0 +1,35 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Champions Threat Calc — CybertronVGC</title>
+<style>/*STYLE*/</style></head><body><div class="wrap">
+<h1>Champions Threat Calc</h1>
+<div class="sub">Reg M-B · your team vs common sets · “do I live it?” (no crit, max roll) · <b>preview build</b></div>
+
+<div class="card">
+  <div class="row">
+    <div><label>Your Pokémon</label><select id="defender"></select></div>
+    <div><label>Threat</label><select id="threat"></select></div>
+  </div>
+  <div class="mt"><label>Their move (set auto-fills)</label><select id="move"></select></div>
+  <div class="toggles">
+    <span><label style="display:inline">Weather</label>
+      <select id="weather" class="mini"><option value="none">none</option><option value="sun">sun</option><option value="rain">rain</option></select></span>
+    <span><label style="display:inline">Last Respects faints</label>
+      <select id="faints" class="mini"><option>0</option><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></span>
+    <label><input type="checkbox" id="screen">your screen up</label>
+    <label><input type="checkbox" id="intim">intimidate on them</label>
+    <label><input type="checkbox" id="tailwind">your tailwind</label>
+    <label><input type="checkbox" id="trickroom">trick room</label>
+  </div>
+  <div id="speed" class="dim small" style="margin-top:10px"></div>
+</div>
+
+<div class="card" id="setinfo"></div>
+<div class="result" id="result"></div>
+
+<div class="sub" style="margin-top:14px">This is a functional preview of the engine. The full build (speed order, reverse SP optimizer, both attack directions, full dex) is spec'd in BUILD_BRIEF.md.</div>
+</div>
+<script>
+//ENGINE
+//UI
+</script></body></html>
