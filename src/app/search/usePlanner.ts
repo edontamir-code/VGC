@@ -4,6 +4,26 @@ import { searchPlans } from "./plan.ts";
 import type { PlanLine, SearchOpts } from "./plan.ts";
 import type { PlanRequest, PlanResponse } from "./planWorker.ts";
 import type { BattleState } from "../model/types.ts";
+import { publishAdvice } from "../history/advice.ts";
+
+/**
+ * Hand the top line to the game log.
+ *
+ * Published against the exact BattleState the search was run on, so a result
+ * that lands after the board has moved on cannot be attributed to a turn it was
+ * never about.
+ */
+function publish(forState: BattleState, lines: PlanLine[], depth: number): void {
+  const top = lines[0];
+  if (!top) return;
+  publishAdvice(forState, {
+    label: top.label,
+    plan: top.plan,
+    source: "planner",
+    depth,
+    proven: top.proven,
+  });
+}
 
 export interface PlannerState {
   lines: PlanLine[];
@@ -78,6 +98,7 @@ export function usePlanner(
       const onMessage = (e: MessageEvent<PlanResponse>) => {
         if (e.data.id !== reqId.current) return; // a newer search superseded this
         worker.removeEventListener("message", onMessage);
+        publish(state, e.data.lines, opts.depth);
         setResult({
           lines: e.data.lines,
           ms: e.data.ms,
@@ -97,6 +118,7 @@ export function usePlanner(
       const t0 = performance.now();
       try {
         const lines = searchPlans(state, opts);
+        publish(state, lines, opts.depth);
         setResult({
           lines,
           ms: Math.round(performance.now() - t0),

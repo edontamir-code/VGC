@@ -11,8 +11,9 @@
 // Terrain only affects GROUNDED Pokemon. A Flying type or a Levitate mon is
 // untouched by all of it, which is why Fake Out still works on a Charizard.
 // ===========================================================================
-import type { BattleState, MonState, TerrainKind } from "../model/types.ts";
+import type { BattleState, MonState, SideId, TerrainKind } from "../model/types.ts";
 import { activeProfile } from "./stats.ts";
+import { grantsSidePriorityImmunity } from "./abilities.ts";
 
 /**
  * Grounded = affected by terrain (and by Ground moves).
@@ -44,6 +45,45 @@ export function blockedByPsychicTerrain(
   if (terrainOf(state) !== "psychic") return false;
   if (priority <= 0) return false;
   return isGrounded(target, state);
+}
+
+/**
+ * Armor Tail / Dazzling / Queenly Majesty block opposing priority moves against
+ * the ENTIRE side, not just the holder. While Farigiraf is out you cannot be
+ * Fake Out flinched, Sucker Punched or Prankster-Encored - on either of your
+ * mons. That is one of the strongest defensive abilities in the format and it
+ * reshapes what leads are safe.
+ *
+ * Returns the ability name that is doing the blocking, or null.
+ *
+ * IMPORTANT: this only blocks moves coming FROM the other side. A side's own
+ * self-targeting priority (Protect at +4, Extreme Speed from an ally) is
+ * unaffected.
+ */
+export function sidePriorityGuard(
+  state: BattleState,
+  defendingSide: SideId
+): { ability: string; holder: MonState } | null {
+  for (const uid of state.sides[defendingSide].active) {
+    if (!uid) continue;
+    const mon = state.mons[uid];
+    if (!mon || mon.fainted) continue;
+    const ability = grantsSidePriorityImmunity(mon);
+    if (ability) return { ability, holder: mon };
+  }
+  return null;
+}
+
+/** Is this specific attack stopped by the defending side's priority guard? */
+export function blockedBySidePriorityGuard(
+  state: BattleState,
+  attackerSide: SideId,
+  defendingSide: SideId,
+  priority: number
+): { ability: string; holder: MonState } | null {
+  if (priority <= 0) return null;
+  if (attackerSide === defendingSide) return null;
+  return sidePriorityGuard(state, defendingSide);
 }
 
 /**

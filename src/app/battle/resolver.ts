@@ -12,6 +12,7 @@ import { koBoundary } from "./envelope.ts";
 import type { KOBoundary } from "./envelope.ts";
 import { getMoveData } from "./moves.ts";
 import { STATUS_MOVES, isStatusMove } from "./statusMoves.ts";
+import { activeProfile } from "./stats.ts";
 
 export interface LineTarget {
   uid: string;
@@ -66,7 +67,7 @@ function verdictScore(v: Verdict, r: ResolvedMatchup, first: boolean): number {
 }
 
 function targetName(m: MonState): string {
-  return m.hasMega || !m.set.baseForm ? m.set.name : m.set.speciesId;
+  return activeProfile(m).displayName;
 }
 
 function phrase(t: LineTarget): string {

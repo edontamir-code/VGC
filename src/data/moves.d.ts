@@ -22,6 +22,10 @@ export interface MoveData {
   firstTurnOnly?: boolean;
   /** Speed stages this move drops on the target (Icy Wind, Electroweb). */
   lowersSpe?: number;
+  /** Percent accuracy. Absent means it always hits. No Guard overrides it. */
+  accuracy?: number;
+  /** The user loses its next turn entirely (Hyper Beam). */
+  recharge?: boolean;
   note?: string;
 }
 

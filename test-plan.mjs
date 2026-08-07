@@ -3,6 +3,7 @@
 // These cover the mechanics a multi-turn GUARANTEE rests on. If any of these
 // break, a "pin" the app reports is not actually a pin.
 import { newBattleState, monFromThreatId } from "./src/app/model/factory.ts";
+import { legacyBattle } from "./test-fixture.mjs";
 import { reduce } from "./src/app/state/reducer.ts";
 import { simulateTurn } from "./src/app/sim/turn.ts";
 import { legalActions, actionProfiles } from "./src/app/sim/actions.ts";
@@ -25,7 +26,7 @@ const mine = (s, n) => Object.values(s.mons).find((m) => m.side === "me" && m.se
 const opp = (s, id) => Object.values(s.mons).find((m) => m.side === "opp" && m.set.speciesId === id);
 
 function boardWith(ids) {
-  let s = newBattleState();
+  let s = legacyBattle();
   for (const id of ids) s = reduce(s, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
   return s;
 }
@@ -580,6 +581,66 @@ console.log("\n-- depth 3 performance --");
   const top = d3[0];
   console.log("      best:", top.label);
   console.log("      pin vs assumed:", top.pinVsAssumed, "| pin vs any set:", top.pinVsPossible);
+}
+
+// ===========================================================================
+// THE READ: Hyper Beam costs a turn, and the search has to pay it.
+//
+// The simulator did not model the recharge at all, so the planner got 150 BP
+// for free and recommended Hyper Beam over everything. The turn it costs never
+// appeared in any line the search looked at - which is exactly the kind of bug
+// that makes a tool confidently wrong rather than merely unhelpful.
+// ===========================================================================
+console.log("\n-- a recharge move costs the following turn --");
+{
+  let s = newBattleState();
+  for (const id of ["garchomp", "charizard-y"]) {
+    s = reduce(s, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
+  }
+  const my = (n) => Object.values(s.mons).find((m) => m.side === "me" && m.set.speciesId === n);
+  const their = (id) => Object.values(s.mons).find((m) => m.side === "opp" && m.set.speciesId === id);
+  s = reduce(s, { type: "SWITCH_IN", side: "me", slot: 0, uid: my("Sylveon").uid });
+  s = reduce(s, { type: "SWITCH_IN", side: "me", slot: 1, uid: my("Farigiraf").uid });
+  const syl = my("Sylveon");
+  const zard = their("charizard-y");
+
+  check(!s.mons[syl.uid].mustRecharge, "nothing is recharging to start with");
+
+  const after = simulateTurn(s, {
+    [syl.uid]: { kind: "move", moveName: "Hyper Beam", targetUid: zard.uid },
+  }, WORST);
+  check(after.state.mons[syl.uid].mustRecharge,
+    "using Hyper Beam leaves the user needing to recharge");
+
+  // The whole cost: on the next turn it has NO choices at all - it cannot even
+  // switch out.
+  const next = reduce(after.state, { type: "NEXT_TURN" });
+  const acts = legalActions(next.mons[syl.uid], next, { allowSwitch: true });
+  check(acts.length === 1,
+    `a recharging Pokemon has exactly one (no-op) action, not a menu (${acts.length})`);
+  check(!acts.some((a) => a.kind === "switch"),
+    "  and switching out is not among them");
+
+  const spent = simulateTurn(next, {
+    [syl.uid]: acts[0],
+    [zard.uid]: { kind: "move", moveName: "Heat Wave" },
+  }, WORST);
+  check(spent.events.some((e) => /must recharge/.test(e.text)),
+    "  the recharge turn is reported as spent doing nothing");
+  check(!spent.state.mons[syl.uid].mustRecharge,
+    "  and the lock clears afterwards");
+
+  // It must not hit anything on the recharge turn.
+  const zardHP = next.mons[zard.uid].curHP;
+  check(spent.state.mons[zard.uid].curHP === zardHP,
+    "  the recharging Pokemon deals no damage that turn");
+
+  // A normal move never sets it.
+  const clean = simulateTurn(s, {
+    [syl.uid]: { kind: "move", moveName: "Hyper Voice" },
+  }, WORST);
+  check(!clean.state.mons[syl.uid].mustRecharge,
+    "a non-recharge move leaves the user free next turn");
 }
 
 console.log(`\n${ok}/${total} passed`);

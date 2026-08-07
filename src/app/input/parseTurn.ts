@@ -197,6 +197,12 @@ function resolveActor(
 
 const TARGET_PREPOSITIONS = new Set(["on", "into", "at", "to", "vs", "->", ">"]);
 
+/** Every way a player narrates a switch. */
+const SWITCH_VERB =
+  /^(switch|switches|switched|switching|swap|swaps|swapped|sub|subs|subbed|in|go|goes|went|going|out|back|pivot|pivots|brought|brings|sent|sends|recall|recalls|retreat|retreats)$/;
+/** Filler between the verb and the Pokemon coming in. */
+const SWITCH_FILLER = new Set(["to", "for", "into", "with", "out", "in", "and", "the"]);
+
 export function parseTurn(text: string, state: BattleState): ParsedTurn {
   const mine = activeMons(state, "me");
   const theirs = activeMons(state, "opp");
@@ -260,11 +266,29 @@ export function parseTurn(text: string, state: BattleState): ParsedTurn {
     }
 
     // Switching.
-    if (rest.length && /^(switch|switches|switched|swap|swaps|in|go)$/.test(norm(rest[0]))) {
-      const benchMons = state.sides[actorMon.side].bench
-        .map((u) => state.mons[u])
-        .filter((m): m is MonState => Boolean(m) && !m.fainted);
-      const tail = [...rest.slice(1), ...targetWords].filter((w) => norm(w) !== "to");
+    //
+    // People narrate this a dozen ways mid-game - "zard out for incin", "zard
+    // goes to incin", "zard -> incin" - and a script that only accepts one of
+    // them is a script you stop using. The filler words after the verb ("to",
+    // "for", "into", "with", "out") are dropped before matching the target.
+    const benchMons = state.sides[actorMon.side].bench
+      .map((u) => state.mons[u])
+      .filter((m): m is MonState => Boolean(m) && !m.fainted);
+
+    // "zard -> incin" with no verb and no move. An arrow to something on your
+    // OWN bench can only mean a switch; an arrow to the other side is a target.
+    if (rest.length === 0 && targetWords.length > 0) {
+      const own = bestMatch(targetWords.join(" "), benchMons, displayName, 45);
+      if (own) {
+        entry.action = { kind: "switch", toUid: own.value.uid };
+        entry.moveName = `switch to ${displayName(own.value)}`;
+        entries.push(entry);
+        return;
+      }
+    }
+
+    if (rest.length && SWITCH_VERB.test(norm(rest[0]))) {
+      const tail = [...rest.slice(1), ...targetWords].filter((w) => !SWITCH_FILLER.has(norm(w)));
       const to = tail.length ? bestMatch(tail.join(" "), benchMons, displayName, 45) : null;
       if (to) {
         entry.action = { kind: "switch", toUid: to.value.uid };

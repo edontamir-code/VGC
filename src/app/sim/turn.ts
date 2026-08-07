@@ -20,7 +20,9 @@ import { isProtect } from "./actions.ts";
 import type { Action, Plan } from "./actions.ts";
 import { effectivePriority, resolveMoveType } from "../battle/moves.ts";
 import { activeProfile } from "../battle/stats.ts";
-import { blockedByPsychicTerrain, blockedByPranksterDark } from "../battle/terrain.ts";
+import {
+  blockedByPsychicTerrain, blockedByPranksterDark, blockedBySidePriorityGuard,
+} from "../battle/terrain.ts";
 
 /** How long an Encore locks the target in. */
 export const ENCORE_TURNS = 3;
@@ -59,7 +61,7 @@ export interface SimResult {
 }
 
 const nameOf = (m: MonState) =>
-  m.hasMega || !m.set.baseForm ? m.set.name : m.set.speciesId;
+  activeProfile(m).displayName;
 
 function put(state: BattleState, mon: MonState): BattleState {
   return { ...state, mons: { ...state.mons, [mon.uid]: mon } };
@@ -214,7 +216,9 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
 
   // --- 1. switches ---------------------------------------------------------
   for (const [uid, action] of Object.entries(plan)) {
-    if (action.kind !== "switch") continue;
+    // A caller can hand us a hole - a parsed turn line it could not resolve.
+    // Better to play the rest of the turn than to throw the whole thing away.
+    if (!action || action.kind !== "switch") continue;
     if (!s.mons[uid] || s.mons[uid].fainted) continue;
     events.push({ actorUid: uid, text: `${nameOf(s.mons[uid])} switches to ${nameOf(s.mons[action.toUid])}` });
     s = doSwitch(s, uid, action.toUid);
@@ -275,6 +279,15 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
     if (action.kind !== "move") continue;
     const { moveName } = action;
 
+    // Recharging. The turn after a Hyper Beam is spent doing nothing at all,
+    // and that turn is most of what makes the move a bad idea in doubles: their
+    // partner gets a free hit on a Pokemon that cannot answer.
+    if (actor.mustRecharge) {
+      events.push({ actorUid: uid, text: `${nameOf(actor)} must recharge and cannot move` });
+      s = put(s, { ...actor, mustRecharge: false, protectStreak: 0 });
+      continue;
+    }
+
     // Protect.
     if (isProtect(moveName)) {
       // A repeat Protect is treated as failing - a guarantee may not rest on it.
@@ -297,9 +310,15 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
 
     // Any non-Protect action breaks the streak, and every action is remembered
     // so an Encore has something to lock onto.
-    s = put(s, { ...s.mons[uid], protectStreak: 0, lastMoveName: moveName });
-
     const data = getMoveData(moveName);
+    s = put(s, {
+      ...s.mons[uid],
+      protectStreak: 0,
+      lastMoveName: moveName,
+      // Set on the way IN so it is already true when this mon's next turn comes
+      // round. Cleared by the recharge branch above.
+      mustRecharge: Boolean(data?.recharge),
+    });
     if (!data) {
       const info = STATUS_MOVES[moveName];
 
@@ -317,6 +336,17 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
           events.push({
             actorUid: uid,
             text: `${moveName} failed - Prankster status moves do not affect Dark types (${nameOf(target)})`,
+          });
+          continue;
+        }
+        // A Prankster Encore sits at +1, so a side priority guard stops it dead.
+        const encGuard = blockedBySidePriorityGuard(
+          s, actor.side, target.side, effectivePriority(moveName, s.mons[uid])
+        );
+        if (encGuard) {
+          events.push({
+            actorUid: uid,
+            text: `${moveName} was blocked by ${nameOf(encGuard.holder)}'s ${encGuard.ability} - no priority reaches that side`,
           });
           continue;
         }
@@ -407,6 +437,16 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
     const movePriority = effectivePriority(moveName, s.mons[uid]);
 
     for (const target of targets) {
+      // Armor Tail and friends: nothing with priority reaches their side at all.
+      const guard = blockedBySidePriorityGuard(s, actor.side, target.side, movePriority);
+      if (guard) {
+        events.push({
+          actorUid: uid,
+          text: `${moveName} (+${movePriority}) was blocked by ${nameOf(guard.holder)}'s ${guard.ability} - it protects that whole side from priority`,
+        });
+        continue;
+      }
+
       // Psychic Terrain: no priority move lands on a grounded target. This is
       // what voids a Fake Out / Sucker Punch / Aqua Jet plan outright.
       if (blockedByPsychicTerrain(s, target, movePriority)) {

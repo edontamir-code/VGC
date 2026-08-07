@@ -2,16 +2,18 @@
 // Team preview, typed at speed: "zard, incin, gambit, chomp, bascu, whims".
 // Same fuzzy matching as the turn parser, aimed at the threat database.
 // ===========================================================================
-import { THREATS } from "../../data/threats.js";
-import type { ThreatMon } from "../../data/threats.js";
+import { SPECIES } from "../model/species.ts";
+import type { SpeciesEntry } from "../model/species.ts";
 import { allMatches, norm } from "./match.ts";
 import { splitSegments } from "./parseTurn.ts";
 
 export interface RosterEntry {
   raw: string;
-  threat: ThreatMon | null;
+  species: SpeciesEntry | null;
   /** Other database entries the text could have meant. */
-  alternatives: ThreatMon[];
+  alternatives: SpeciesEntry[];
+  /** True when the match has no competitive set, only stats. */
+  statsOnly: boolean;
   problem: string | null;
 }
 
@@ -34,12 +36,16 @@ export function parseRoster(text: string): ParsedRoster {
 
   for (const raw of segments) {
     if (!norm(raw)) continue;
-    const matches = allMatches(raw, THREATS, (t) => t.name, 45).filter(
-      (m) => !taken.has(m.value.id)
-    );
-    // Also try matching the id, so "charizard-y" works.
-    const byId = THREATS.filter(
-      (t) => !taken.has(t.id) && norm(t.id).startsWith(norm(raw))
+    // Species with a real competitive set are preferred over stats-only dex
+    // entries, so "chomp" lands on the curated Garchomp, not a bare one.
+    const matches = allMatches(raw, SPECIES, (s) => s.name, 45)
+      .filter((m) => !taken.has(m.value.id))
+      .sort((a, b) => {
+        const rank = (s: SpeciesEntry) => (s.source === "dex" ? 1 : 0);
+        return rank(a.value) - rank(b.value) || b.score - a.score;
+      });
+    const byId = SPECIES.filter(
+      (s) => !taken.has(s.id) && norm(s.id).startsWith(norm(raw))
     );
 
     const best = matches[0]?.value ?? byId[0] ?? null;
@@ -47,20 +53,22 @@ export function parseRoster(text: string): ParsedRoster {
       taken.add(best.id);
       entries.push({
         raw,
-        threat: best,
+        species: best,
         alternatives: matches.slice(1, 4).map((m) => m.value),
+        statsOnly: best.source === "dex",
         problem: null,
       });
     } else {
       unknown.push(raw);
       entries.push({
         raw,
-        threat: null,
+        species: null,
         alternatives: [],
-        problem: "not in the database",
+        statsOnly: false,
+        problem: "not a legal Pokemon in this format",
       });
     }
   }
 
-  return { entries, matched: entries.filter((e) => e.threat).length, unknown };
+  return { entries, matched: entries.filter((e) => e.species).length, unknown };
 }

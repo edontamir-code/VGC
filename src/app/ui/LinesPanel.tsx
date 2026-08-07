@@ -1,6 +1,7 @@
 // "If I click X, do I outspeed and KO?" - ranked, with the guarantee spelled out.
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useBattle } from "../state/store.tsx";
+import { publishAdvice } from "../history/advice.ts";
 import { incomingThreats, activeMons } from "../battle/resolver.ts";
 import type { LineTarget } from "../battle/resolver.ts";
 import { rankedLinesWithRisk } from "../battle/leadRisk.ts";
@@ -138,6 +139,23 @@ export default function LinesPanel() {
     () => (oppActive.length && myActive.length ? incomingThreats(state).slice(0, 6) : []),
     [state, oppActive.length, myActive.length]
   );
+
+  // Hand the top line to the game log. This is the fallback source: it is
+  // always available, whereas the planner only publishes if the Plan tab has
+  // been open long enough for the worker to answer. Planner advice takes
+  // precedence for the same board.
+  useEffect(() => {
+    const top = lines.find((l) => l.kind === "attack") ?? lines[0];
+    if (!top) return;
+    const target = top.targets[0]?.uid;
+    publishAdvice(state, {
+      label: `${top.attacker.set.name}: ${top.moveName}`,
+      plan: { [top.attackerUid]: { kind: "move", moveName: top.moveName, targetUid: target } },
+      source: "lines",
+      depth: null,
+      proven: false,
+    });
+  }, [state, lines]);
 
   if (!oppActive.length) {
     return (

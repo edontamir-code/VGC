@@ -7,6 +7,7 @@ import type { MonState, StatusKind } from "../model/types.ts";
 import { activeProfile, rawStats, spTotal, SP_BUDGET, SP_MAX_PER_STAT } from "../battle/stats.ts";
 import { STATUS_MOVES } from "../battle/statusMoves.ts";
 import { scout, isSimulated } from "../battle/scouting.ts";
+import { moveBelief } from "../battle/inference.ts";
 import type { SPSpread } from "../../engine.js";
 
 const ALL_MOVE_NAMES = [...Object.keys(MOVES), ...Object.keys(STATUS_MOVES)].sort();
@@ -23,6 +24,7 @@ export default function MonEditor({ mon, onClose }: { mon: MonState; onClose: ()
   const total = spTotal(mon.set.sp as Record<string, number | undefined>);
   const [poolDraft, setPoolDraft] = useState("");
   const sc = scout(mon);
+  const belief = moveBelief(mon);
   const pool = [
     ...new Set([...(mon.set.movePool ?? []), ...mon.set.moves.filter(Boolean)]),
   ];
@@ -363,15 +365,33 @@ export default function MonEditor({ mon, onClose }: { mon: MonState; onClose: ()
               </span>
             </div>
             <div className="hint" style={{ marginBottom: 8 }}>
-              They carry four of these. The planner assumes they have any move you have
-              not ruled out, so every one you settle makes the guarantees stronger.
+              They carry four of these, and the percentages are what each move is worth
+              GIVEN what you have already seen. Slots are scarce: confirming one move
+              pushes every other candidate down, and confirming a surprising move pushes
+              them down hard.
+              {belief.unlistedMass > 0.01 && (
+                <>
+                  {" "}
+                  <b>{Math.round(belief.unlistedMass * 100)}%</b> of a slot is still
+                  something not listed here at all.
+                </>
+              )}
             </div>
             {pool.map((mv) => {
               const seen = sc.confirmed.includes(mv);
               const out = sc.ruledOut.includes(mv);
+              const prob = belief.moves.find((b) => b.move === mv);
               return (
                 <div key={mv} className={`poolmove ${seen ? "seen" : ""} ${out ? "out" : ""}`}>
                   <span style={{ flex: 1 }}>{mv}</span>
+                  {prob && !out && (
+                    <span
+                      className={`prob ${seen ? "certain" : ""}`}
+                      title={`${Math.round(prob.prior * 100)}% of this species runs it; ${Math.round(prob.p * 100)}% given what you have seen`}
+                    >
+                      {Math.round(prob.p * 100)}%
+                    </span>
+                  )}
                   {!isSimulated(mv) && <span className="tag">not simulated</span>}
                   <button
                     className={`btn xs ${seen ? "on" : ""}`}

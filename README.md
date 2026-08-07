@@ -163,6 +163,21 @@ first teaches nothing, and under Trick Room moving first means *slower*. Ties ar
 ruled out — "A went first" only proves A ≥ B, so an exact speed tie stays possible and
 `outspeedVerdict` reports `unknown` rather than overclaiming.
 
+### The species dex
+`src/data/dex.js` holds **all 310 Pokémon legal in Reg M-A/M-B** — name, types and base
+stats, including all 75 Mega forms. Sourced from pokebase.app's Champions dex, all four
+pages. That makes any legal opponent enterable at team preview.
+
+It is deliberately separate from `threats.js`: the dex is static game data that never
+changes, while threat *sets* (items, spreads, move pools) track the meta. A species with
+no curated set still works — it comes in with a legal placeholder spread marked **stats
+only**, which you fill in as you scout.
+
+The source isn't infallible. Its Farigiraf entry is provably wrong (107/60 SpA/SpD, when
+the in-game screen only derives from 110/70), so verified corrections live in `OVERRIDES`
+and the game always wins. Two errors in `threats.js` surfaced from cross-checking against
+it too: Archaludon's SpD was 85 and should be 65.
+
 ### Their back line
 Switching is most of doubles, so the planner models their whole roster. Enter their six
 at team preview (`zard, incin, gambit, chomp, bascu, whims`) and every one that could

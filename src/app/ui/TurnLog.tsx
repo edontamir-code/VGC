@@ -61,9 +61,13 @@ export default function TurnLog() {
 
       <div className="panel">
         <div className="panel-title">Danger zone</div>
-        <button className="btn danger" onClick={reset}>
+        <button className="btn danger" onClick={() => reset("unfinished")}>
           Reset battle (clears the saved board)
         </button>
+        <div className="hint" style={{ marginTop: 6 }}>
+          This closes the current game as unfinished. Use <b>New game</b> in the top bar
+          instead if you want the result recorded.
+        </div>
       </div>
     </>
   );

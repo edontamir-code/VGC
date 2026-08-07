@@ -1,73 +1,83 @@
-// Edon's team ("CybertronVGC", Slot 10, Team ID G3XYDBBC22).
-// Stats DECODED FROM THE IN-GAME STAT SCREEN and re-derived through the Champions
-// formula (every mon sums to 66 SP — the read is verified). For the two Mega mons,
-// `base` is the MEGA form's base stats (its in-battle profile); `baseForm` keeps the
-// pre-Mega numbers for reference. Natures use atk/def/spa/spd/spe keys.
+// Edon's team — Team ID QY3XFXCEJA.
+//
+// TRANSCRIBED DIRECTLY FROM THE IN-GAME TEAM SCREEN (both the Moves & More and
+// the Stats pages), then re-derived through the Champions formula. Every one of
+// the 36 stats below reproduces the exact number the game displays, and every
+// spread totals exactly 66 SP — see test-team.mjs, which asserts all of it.
+//
+// For the two Mega mons, `base` is the MEGA form's stat line (the in-battle
+// profile) and `baseForm` is the pre-Mega line. The GAME's stat screen shows the
+// PRE-Mega numbers, so that is what the test checks against.
+//
+// Natures are written as +stat/-stat; the game shows them as the small up/down
+// arrows beside each stat.
 export const TEAM = [
+  {
+    // Mega Raichu Y is a Champions-original Mega: 60/100/55/160/80/130.
+    // Megaing nearly doubles its SpA (112 -> 176 at this spread) and lifts its
+    // Speed, so the pre-Mega numbers badly understate it.
+    name: "Raichu", mega: "Mega Raichu Y",
+    types: ["Electric"],
+    base:  { hp:60, atk:100, def:55, spa:160, spd:80, spe:130 },   // Mega Raichu Y
+    baseForm: { hp:60, atk:90, def:55, spa:90, spd:80, spe:110 },
+    sp:    { hp:32, atk:0, def:0, spa:2, spd:0, spe:32 },
+    nature:{ plus:"spe", minus:"atk" },           // Timid
+    item:  "Raichunite Y", ability:"No Guard",     // Lightning Rod before it Megas
+    moves: ["Zap Cannon","Focus Blast","Fake Out","Protect"],
+    note:  "NO GUARD once Mega'd — Zap Cannon (50%) and Focus Blast (70%) become certain, and Zap Cannon always paralyses. That is the entire point of the set. Before it Megas it has Lightning Rod instead, which draws Electric moves to it.",
+  },
   {
     name: "Staraptor", mega: "Mega Staraptor",
     types: ["Fighting","Flying"],                 // Mega typing (base form is Normal/Flying)
-    base:  { hp:85, atk:140, def:100, spa:60, spd:90, spe:110 },
+    base:  { hp:85, atk:140, def:100, spa:60, spd:90, spe:110 },   // Mega Staraptor
     baseForm: { hp:85, atk:120, def:70, spa:50, spd:60, spe:100 },
-    sp:    { hp:31, atk:1, def:0, spa:0, spd:2, spe:32 },
+    sp:    { hp:15, atk:19, def:0, spa:0, spd:0, spe:32 },
     nature:{ plus:"spe", minus:"spa" },           // Jolly
-    item:  "Staraptite", ability:"Contrary",      // Intimidate as base form on entry
+    item:  "Staraptite", ability:"Contrary",      // Intimidate as the base form on entry
     immuneTypes: ["Ground"],
-    moves: ["Close Combat","Brave Bird","Roost","Protect"],
-    note:  "Contrary + Close Combat setup sweeper; Intimidate on entry before Mega.",
+    moves: ["Close Combat","Dual Wingbeat","Tailwind","Protect"],
+    note:  "Intimidate on entry, Contrary once Mega'd — so Close Combat RAISES its defences instead of dropping them. Your only Tailwind.",
   },
   {
-    name: "Glimmora",
-    types: ["Rock","Poison"],
-    base:  { hp:83, atk:55, def:90, spa:130, spd:81, spe:86 },
-    sp:    { hp:1, atk:0, def:1, spa:32, spd:0, spe:32 },
+    // HISUIAN Arcanine: Fire/ROCK, 95/115/80/95/80/90 — not the Kantonian line.
+    // Rock Head is what makes Head Smash (150 BP) recoil-free.
+    name: "Arcanine",
+    types: ["Fire","Rock"],
+    base:  { hp:95, atk:115, def:80, spa:95, spd:80, spe:90 },
+    sp:    { hp:2, atk:32, def:0, spa:0, spd:0, spe:32 },
+    nature:{ plus:"spe", minus:"spa" },           // Jolly
+    item:  "Focus Sash", ability:"Rock Head",
+    moves: ["Flare Blitz","Head Smash","Extreme Speed","Protect"],
+    note:  "Hisuian. Rock Head cancels Head Smash AND Flare Blitz recoil. Extreme Speed is +2 priority. Focus Sash survives any single hit from full.",
+  },
+  {
+    name: "Farigiraf",
+    types: ["Normal","Psychic"],
+    base:  { hp:120, atk:90, def:70, spa:110, spd:70, spe:60 },
+    sp:    { hp:29, atk:0, def:21, spa:0, spd:16, spe:0 },
+    nature:{ plus:"spd", minus:"atk" },           // Careful
+    item:  "Sitrus Berry", ability:"Armor Tail",
+    moves: ["Psychic","Helping Hand","Trick Room","Protect"],
+    note:  "Armor Tail blocks ALL priority against your side — it shuts off their Fake Out, Sucker Punch and Aqua Jet while it is out. That is not simulated, so judge it yourself. Slow enough to move first under its own Trick Room.",
+  },
+  {
+    name: "Sylveon",
+    types: ["Fairy"],
+    base:  { hp:95, atk:65, def:65, spa:110, spd:130, spe:60 },
+    sp:    { hp:13, atk:0, def:22, spa:23, spd:0, spe:8 },
     nature:{ plus:"spa", minus:"atk" },           // Modest
-    item:  "Focus Sash", ability:"Toxic Debris",
-    moves: ["Power Gem","Sludge Bomb","Earth Power","Spiky Shield"],
-    note:  "Focus Sash lead; survives any single hit from full HP.",
-  },
-  {
-    name: "Whimsicott",
-    types: ["Grass","Fairy"],
-    base:  { hp:60, atk:67, def:85, spa:77, spd:75, spe:116 },
-    sp:    { hp:28, atk:0, def:32, spa:0, spd:0, spe:6 },
-    nature:{ plus:"spe", minus:"atk" },           // Timid
-    item:  "Occa Berry", ability:"Prankster",     // Occa halves one super-effective Fire hit
-    berry: { type:"Fire", superEffOnly:true, mult:0.5 },
-    moves: ["Tailwind","Moonblast","Charm","Light Screen"],
-    note:  "Prankster speed control / screens; not a tank.",
+    item:  "Fairy Feather", ability:"Pixilate",
+    moves: ["Hyper Voice","Quick Attack","Hyper Beam","Detect"],
+    note:  "Pixilate turns all three Normal moves Fairy at 1.2x — including QUICK ATTACK, which gives you priority Fairy damage, and Hyper Beam at 150 BP. Hyper Voice is the spread option.",
   },
   {
     name: "Kingambit",
     types: ["Dark","Steel"],
     base:  { hp:100, atk:135, def:120, spa:60, spd:85, spe:50 },
-    sp:    { hp:32, atk:25, def:2, spa:0, spd:6, spe:1 },
+    sp:    { hp:32, atk:32, def:0, spa:0, spd:1, spe:1 },
     nature:{ plus:"atk", minus:"spa" },           // Adamant
-    item:  "Chople Berry", ability:"Defiant",     // Chople halves one super-effective Fighting hit
-    berry: { type:"Fighting", superEffOnly:true, mult:0.5 },
-    moves: ["Kowtow Cleave","Iron Head","Low Kick","Sucker Punch"],
-    note:  "Physical wall + Sucker Punch priority; specially frail (SpD 111).",
-  },
-  {
-    name: "Garchomp",
-    types: ["Dragon","Ground"],
-    base:  { hp:108, atk:130, def:95, spa:80, spd:85, spe:102 },
-    sp:    { hp:2, atk:32, def:0, spa:0, spd:0, spe:32 },
-    nature:{ plus:"spe", minus:"spa" },           // Jolly
-    item:  "Life Orb", ability:"Rough Skin",
-    moves: ["Earthquake","Dragon Claw","Rock Slide","Protect"],
-    note:  "Life Orb spread attacker.",
-  },
-  {
-    name: "Delphox", mega: "Mega Delphox",
-    types: ["Fire","Psychic"],
-    base:  { hp:75, atk:69, def:72, spa:159, spd:125, spe:134 },  // Mega base stats
-    baseForm: { hp:75, atk:69, def:72, spa:114, spd:100, spe:104 },
-    sp:    { hp:1, atk:0, def:2, spa:31, spd:0, spe:32 },
-    nature:{ plus:"spe", minus:"atk" },           // Timid
-    item:  "Delphoxite", ability:"Levitate",      // Mega ability = Levitate (Ground immune)
-    immuneTypes: ["Ground"],
-    moves: ["Heat Wave","Psychic","Substitute","Protect"],
-    note:  "Excellent special wall (SpD 145) but very frail physically (Def 94).",
+    item:  "Life Orb", ability:"Defiant",
+    moves: ["Kowtow Cleave","Sucker Punch","Swords Dance","Protect"],
+    note:  "Life Orb, not a berry, on this build — so it takes super-effective Fighting hits at full price. Defiant punishes Intimidate. Sucker Punch only works if the target is attacking.",
   },
 ];

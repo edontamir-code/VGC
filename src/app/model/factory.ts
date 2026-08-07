@@ -92,14 +92,21 @@ export function makeMonState(
     protectStreak: 0,
     lastMoveName: null,
     encoreTurnsLeft: 0,
+    mustRecharge: false,
     speedCandidates: null,
+    statBounds: {},
     // My own team is known; theirs starts as "might have been brought".
     brought: side === "me" ? "confirmed" : "possible",
     // My own mons are fully known; opponents start as assumed common sets.
     revealed:
       side === "me"
-        ? { moves: [...set.moves], ruledOut: [], item: true, ability: true, nature: true, sp: true }
-        : { ...NOTHING_REVEALED, moves: [], ruledOut: [] },
+        ? {
+            moves: [...set.moves], ruledOut: [],
+            item: true, itemRuledOut: [],
+            ability: true, abilityRuledOut: [],
+            nature: true, sp: true,
+          }
+        : { ...NOTHING_REVEALED, moves: [], ruledOut: [], itemRuledOut: [], abilityRuledOut: [] },
   };
 }
 
@@ -120,6 +127,25 @@ export function monFromThreatId(id: string, side: SideId = "opp"): MonState | nu
 export function newBattleState(customTeam?: MonSet[]): BattleState {
   const sets = customTeam?.length ? customTeam : TEAM.map((m) => setFromTeam(m));
   const mine = sets.map((s) => makeMonState({ ...s }, "me", "team"));
+
+  // Only ONE of my Pokemon Mega Evolves per battle. A roster can carry several
+  // stones, but the board must never show two Megas at once - every number
+  // computed off that board would be inflated for both of them. The first stone
+  // holder gets it by default and the Preview tab moves it.
+  let megaTaken = false;
+  for (let i = 0; i < mine.length; i++) {
+    if (!mine[i].hasMega) continue;
+    if (!megaTaken) {
+      megaTaken = true;
+      continue;
+    }
+    // HP has to come back down with it: a base-form Pokemon does not keep the
+    // Mega's HP stat.
+    const set = mine[i].set;
+    const stats = computeStats(set.baseForm ?? set.base, set.sp, set.nature);
+    mine[i] = { ...mine[i], hasMega: false, maxHP: stats.hp, curHP: stats.hp };
+  }
+
   const mons: Record<string, MonState> = {};
   for (const m of mine) mons[m.uid] = m;
 

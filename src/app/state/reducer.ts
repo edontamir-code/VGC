@@ -11,6 +11,8 @@ import type {
 } from "../model/types.ts";
 import { activeProfile } from "../battle/stats.ts";
 import { simulateTurn } from "../sim/turn.ts";
+import { damageContradiction, narrowFromDamage } from "../battle/damageInference.ts";
+import { getMoveData } from "../battle/moves.ts";
 // Aliased: this file's own `Action` is the reducer action union.
 import type { Action as SimAction, Plan } from "../sim/actions.ts";
 import { deriveObservations, applyObservations, speedRange } from "../battle/speedInference.ts";
@@ -27,6 +29,7 @@ export type Action =
   | { type: "SET_STATUS"; uid: string; status: StatusKind | null }
   | { type: "SET_ITEM_ACTIVE"; uid: string; active: boolean }
   | { type: "TOGGLE_MEGA"; uid: string }
+  | { type: "SET_MEGA"; side: SideId; uid: string | null }
   | { type: "SET_FAINTED"; uid: string; fainted: boolean }
   | { type: "SWITCH_IN"; side: SideId; slot: number; uid: string }
   | { type: "ADD_MON"; side: SideId; mon: MonState; slot?: number }
@@ -39,6 +42,10 @@ export type Action =
   | { type: "UNREVEAL_MOVE"; uid: string; moveName: string }
   | { type: "RULE_OUT_MOVE"; uid: string; moveName: string }
   | { type: "UNRULE_MOVE"; uid: string; moveName: string }
+  | { type: "RULE_OUT_ITEM"; uid: string; item: string }
+  | { type: "RULE_OUT_ABILITY"; uid: string; ability: string }
+  | { type: "UNRULE_ITEM"; uid: string; item: string }
+  | { type: "UNRULE_ABILITY"; uid: string; ability: string }
   | { type: "SET_REVEALED"; uid: string; field: "item" | "ability" | "nature" | "sp"; value: boolean }
   | { type: "SET_WEATHER"; kind: WeatherKind | null; rock?: boolean }
   | { type: "SET_TERRAIN"; kind: TerrainKind | null }
@@ -50,8 +57,19 @@ export type Action =
   | { type: "SET_DURATION"; key: keyof BattleState["durations"]; value: number }
   | {
       type: "APPLY_TURN_SCRIPT";
-      /** Ordered exactly as observed - the order is the speed evidence. */
-      entries: { actorUid: string; moveName: string | null; action: SimAction }[];
+      /**
+       * Ordered exactly as observed - the order is the speed evidence.
+       * `actorUid` and `action` are nullable because the parser reports what it
+       * could NOT resolve rather than dropping it; those entries are skipped
+       * with a log line instead of taking the whole turn down.
+       */
+      entries: {
+        actorUid: string | null;
+        moveName: string | null;
+        action: SimAction | null;
+        raw?: string;
+        problem?: string | null;
+      }[];
       /** HP readings and faints you observed - applied after the simulation. */
       effects?: (
         | { kind: "hp"; uid: string; pct?: number; exact?: number }
@@ -186,6 +204,35 @@ export function reduce(state: BattleState, action: Action): BattleState {
         }
       }
       return patchMon(state, action.uid, (m) => recomputeHP({ ...m, hasMega: !m.hasMega }));
+    }
+
+    /**
+     * Designate which of MY Pokemon is the one that Mega Evolves.
+     *
+     * Distinct from TOGGLE_MEGA, which refuses when the side's Mega is already
+     * spent. That refusal is right for the opponent - seeing a second of theirs
+     * Mega Evolve is a contradiction worth flagging - but wrong for my own
+     * team, where picking a different Mega at preview is just a decision. So
+     * this MOVES the Mega instead of rejecting it.
+     */
+    case "SET_MEGA": {
+      let next = state;
+      for (const m of Object.values(state.mons)) {
+        if (m.side !== action.side) continue;
+        if (!m.set.megaName && !m.set.baseForm) continue;
+        const want = m.uid === action.uid;
+        if (m.hasMega === want) continue;
+        next = patchMon(next, m.uid, (x) => recomputeHP({ ...x, hasMega: want }));
+      }
+      if (next === state) return state;
+      const chosen = action.uid ? state.mons[action.uid] : null;
+      return log(
+        next,
+        chosen
+          ? `${chosen.set.name} is your Mega this battle - every other stone holder plays as its base form.`
+          : "No Mega this battle - every stone holder plays as its base form.",
+        "system"
+      );
     }
 
     case "SET_FAINTED":
@@ -397,6 +444,47 @@ export function reduce(state: BattleState, action: Action): BattleState {
         },
       }));
 
+    case "RULE_OUT_ITEM": {
+      const mon = state.mons[action.uid];
+      if (!mon || mon.revealed.itemRuledOut.includes(action.item)) return state;
+      const next = patchMon(state, action.uid, (m) => ({
+        ...m,
+        revealed: { ...m.revealed, itemRuledOut: [...m.revealed.itemRuledOut, action.item] },
+      }));
+      return log(next, `Ruled out ${action.item} on ${mon.set.name}.`, "scout");
+    }
+
+    case "RULE_OUT_ABILITY": {
+      const mon = state.mons[action.uid];
+      if (!mon || mon.revealed.abilityRuledOut.includes(action.ability)) return state;
+      const next = patchMon(state, action.uid, (m) => ({
+        ...m,
+        revealed: {
+          ...m.revealed,
+          abilityRuledOut: [...m.revealed.abilityRuledOut, action.ability],
+        },
+      }));
+      return log(next, `Ruled out ${action.ability} on ${mon.set.name}.`, "scout");
+    }
+
+    case "UNRULE_ITEM":
+      return patchMon(state, action.uid, (m) => ({
+        ...m,
+        revealed: {
+          ...m.revealed,
+          itemRuledOut: m.revealed.itemRuledOut.filter((x) => x !== action.item),
+        },
+      }));
+
+    case "UNRULE_ABILITY":
+      return patchMon(state, action.uid, (m) => ({
+        ...m,
+        revealed: {
+          ...m.revealed,
+          abilityRuledOut: m.revealed.abilityRuledOut.filter((x) => x !== action.ability),
+        },
+      }));
+
     case "SET_REVEALED":
       return patchMon(state, action.uid, (m) => ({
         ...m,
@@ -498,9 +586,28 @@ export function reduce(state: BattleState, action: Action): BattleState {
 
       let next: BattleState = log(state, `Turn ${state.turn}: ${script}`, "action");
 
+      // 0. Split off what the parser could not resolve. Those entries used to
+      //    reach the simulator and crash it, which meant one mistyped segment
+      //    threw away the whole turn. Drop them and SAY SO - a silently ignored
+      //    line would leave the board quietly wrong.
+      const usable: { actorUid: string; moveName: string | null; action: SimAction }[] = [];
+      for (const e of entries) {
+        if (e.actorUid && e.action) {
+          usable.push({ actorUid: e.actorUid, moveName: e.moveName, action: e.action });
+          continue;
+        }
+        next = log(
+          next,
+          `Skipped "${(e.raw ?? "that segment").trim()}" - ` +
+            `${e.problem ?? "could not tell what happened"}. The rest of the turn was applied.`,
+          "system"
+        );
+      }
+      if (usable.length === 0) return next;
+
       // 1. Everything they used is now CONFIRMED. This is the cheapest scouting
       //    there is - you already watched it happen.
-      for (const e of entries) {
+      for (const e of usable) {
         const mon = next.mons[e.actorUid];
         if (!mon || mon.side !== "opp" || !e.moveName) continue;
         if (mon.revealed.moves.includes(e.moveName)) continue;
@@ -517,7 +624,7 @@ export function reduce(state: BattleState, action: Action): BattleState {
 
       // 2. The ORDER is a Speed observation. Narrow their possible Speed stats
       //    against it before the field changes.
-      const observations = deriveObservations(next, entries);
+      const observations = deriveObservations(next, usable);
       const speedUpdates = applyObservations(next, observations);
       for (const [uid, candidates] of Object.entries(speedUpdates)) {
         const before = speedRange(next.mons[uid]);
@@ -534,15 +641,21 @@ export function reduce(state: BattleState, action: Action): BattleState {
       // 3. Play the turn out. Average rolls, because this already happened and
       //    you can correct HP from the game if you can see it.
       const plan: Plan = {};
-      for (const e of entries) plan[e.actorUid] = e.action;
+      for (const e of usable) plan[e.actorUid] = e.action;
       const sim = simulateTurn(next, plan, { roll: "average", tie: "them" });
       next = sim.state;
       for (const ev of sim.events) next = log(next, ev.text, "action");
 
       // 4. What you actually SAW overrides the simulated roll.
+      //
+      //    Record the HP each Pokemon was on BEFORE the correction, because the
+      //    difference between that and what you report is a measurement of the
+      //    attacker's investment - see step 5.
+      const hpBeforeEffect: Record<string, number> = {};
       for (const eff of action.effects ?? []) {
         const mon = next.mons[eff.uid];
         if (!mon) continue;
+        hpBeforeEffect[eff.uid] = state.mons[eff.uid]?.curHP ?? mon.curHP;
         if (eff.kind === "faint") {
           next = patchMon(next, eff.uid, (m) => ({ ...m, curHP: 0, fainted: true }));
           next = log(next, `${mon.set.name} fainted.`, "hp");
@@ -555,6 +668,83 @@ export function reduce(state: BattleState, action: Action): BattleState {
             `${mon.set.name} corrected to ${next.mons[eff.uid].curHP}/${mon.maxHP} HP.`,
             "hp"
           );
+        }
+      }
+
+      // 5. The damage you just reported is a MEASUREMENT of their spread.
+      //
+      //    "Heat Wave did 82% to Raichu" bounds Charizard's Special Attack, and
+      //    that bound holds for the rest of the game. A KO is deliberately not
+      //    used: all it proves is "at least lethal", which is a far weaker
+      //    statement than an exact number and would wrongly narrow the range.
+      //    Attribution has to be exact. A spread move hit everything on the far
+      //    side, so every reported drop over there is its doing - but a
+      //    single-target move with no target recorded is ambiguous, and a
+      //    Pokemon on the attacker's OWN side never took damage from it. Get
+      //    this wrong and the tool "measures" a stat from someone else's hit.
+      const attackerSideOf = (uid: string) => next.mons[uid]?.side;
+      for (const e of usable) {
+        if (e.action.kind !== "move") continue;
+        const spread = Boolean(getMoveData(e.action.moveName)?.spread);
+        const foeSide = attackerSideOf(e.actorUid) === "me" ? "opp" : "me";
+        const targets = e.action.targetUid
+          ? [e.action.targetUid]
+          : spread
+            ? Object.keys(hpBeforeEffect).filter((u) => next.mons[u]?.side === foeSide)
+            : [];
+        for (const targetUid of targets) {
+          if (!(targetUid in hpBeforeEffect)) continue;
+          const after = next.mons[targetUid];
+          if (!after || after.fainted) continue;
+          const before = hpBeforeEffect[targetUid];
+          const damage = before - after.curHP;
+          if (damage <= 0) continue;
+
+          // Damage no legal spread could produce means an assumption is wrong,
+          // and that is worth more than any deduction - say it rather than
+          // discarding the observation.
+          const impossible = damageContradiction(
+            {
+              attackerUid: e.actorUid,
+              defenderUid: targetUid,
+              moveName: e.action.moveName,
+              damage,
+              defenderMaxHP: after.maxHP,
+            },
+            state
+          );
+          if (impossible) {
+            next = log(next, impossible, "scout");
+            continue;
+          }
+
+          const narrowings = narrowFromDamage(
+            {
+              attackerUid: e.actorUid,
+              defenderUid: targetUid,
+              moveName: e.action.moveName,
+              damage,
+              defenderMaxHP: after.maxHP,
+            },
+            // Measured against the board as it was when the hit landed.
+            state
+          );
+          for (const n of narrowings) {
+            next = patchMon(next, n.uid, (m) => {
+              const prev = m.statBounds[n.key as keyof typeof m.statBounds];
+              // Intersect with anything already proved - every hit either
+              // narrows the range or agrees with it.
+              const merged = prev
+                ? {
+                    min: Math.max(prev.min, n.after.min),
+                    max: Math.min(prev.max, n.after.max),
+                    minSP: Math.max(prev.minSP, Math.min(...n.sp)),
+                  }
+                : { min: n.after.min, max: n.after.max, minSP: Math.min(...n.sp) };
+              return { ...m, statBounds: { ...m.statBounds, [n.key]: merged } };
+            });
+            next = log(next, n.text, "scout");
+          }
         }
       }
 

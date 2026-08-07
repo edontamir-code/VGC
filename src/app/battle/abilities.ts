@@ -201,6 +201,32 @@ export const UNSIMULATED_ABILITIES: Record<string, string> = {
   "Contrary": "Inverts stat changes - Close Combat RAISES its defences.",
 };
 
+/**
+ * Effective accuracy of a move, as a percentage.
+ * No Guard makes every move to OR from its holder land, which converts an
+ * unreliable nuke into a certainty - the difference between a coin flip and an
+ * answer.
+ */
+export function effectiveAccuracy(
+  baseAccuracy: number | undefined,
+  attacker: MonState,
+  defender: MonState
+): { accuracy: number; noGuard: boolean } {
+  const noGuard =
+    activeProfile(attacker).ability === "No Guard" ||
+    activeProfile(defender).ability === "No Guard";
+  if (noGuard) return { accuracy: 100, noGuard: true };
+  return { accuracy: baseAccuracy ?? 100, noGuard: false };
+}
+
+/** Abilities that block opposing priority moves against the WHOLE side. */
+export const SIDE_PRIORITY_IMMUNITY = ["Armor Tail", "Dazzling", "Queenly Majesty"];
+
+export function grantsSidePriorityImmunity(mon: MonState): string | null {
+  const a = activeProfile(mon).ability;
+  return SIDE_PRIORITY_IMMUNITY.includes(a) ? a : null;
+}
+
 export function unsimulatedAbility(mon: MonState): string | null {
   const a = activeProfile(mon).ability;
   return UNSIMULATED_ABILITIES[a] ?? null;

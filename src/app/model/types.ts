@@ -63,15 +63,24 @@ export interface Revealed {
    * informative as confirming them - it is what collapses the search space.
    */
   ruledOut: string[];
+  /** True once you have SEEN the item, which pins it to set.item. */
   item: boolean;
+  /** Items you have ruled out - e.g. it took a hit that a Sash would have survived. */
+  itemRuledOut: string[];
+  /** True once you have SEEN the ability. */
   ability: boolean;
+  /** Abilities ruled out - e.g. it was hit by priority, so it lacks Armor Tail. */
+  abilityRuledOut: string[];
   nature: boolean;
   /** True once the user pins down the SP spread (e.g. from a damage roll). */
   sp: boolean;
 }
 
 export const NOTHING_REVEALED: Revealed = {
-  moves: [], ruledOut: [], item: false, ability: false, nature: false, sp: false,
+  moves: [], ruledOut: [],
+  item: false, itemRuledOut: [],
+  ability: false, abilityRuledOut: [],
+  nature: false, sp: false,
 };
 
 /** Moves a Pokemon can carry. */
@@ -125,11 +134,27 @@ export interface MonState {
   /** Turns remaining locked into `lastMoveName` by Encore. 0 = free. */
   encoreTurnsLeft: number;
   /**
+   * True when this Pokemon spent its last turn on a recharge move (Hyper Beam)
+   * and must spend this one doing nothing.
+   *
+   * Without this the search gets 150 BP for free and recommends Hyper Beam over
+   * everything, because the turn it costs never appears in any line it looks at.
+   */
+  mustRecharge: boolean;
+  /**
    * Raw Speed stats still consistent with every turn order observed so far.
    * null = nothing observed yet (all legal spreads possible). Narrowed by
    * speedInference.ts as you record turns.
    */
   speedCandidates: number[] | null;
+  /**
+   * Stat values still consistent with the damage actually observed, per stat.
+   *
+   * "Heat Wave did 82% to Raichu" is a measurement of Special Attack, and it
+   * holds for the rest of the game. These compound: every hit either narrows
+   * the range or confirms it. Written by damageInference.ts.
+   */
+  statBounds: Partial<Record<"atk" | "def" | "spa" | "spd" | "hp", { min: number; max: number; minSP: number }>>;
   /** Part of their brought four? See BroughtStatus. */
   brought: BroughtStatus;
   revealed: Revealed;

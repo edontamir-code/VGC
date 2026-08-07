@@ -6,6 +6,7 @@ import { getMoveData } from "../battle/moves.ts";
 import { STATUS_MOVES } from "../battle/statusMoves.ts";
 import { activeMons } from "../battle/resolver.ts";
 import { possibleSwitchIns } from "../battle/roster.ts";
+import { activeProfile } from "../battle/stats.ts";
 
 export interface MoveAction {
   kind: "move";
@@ -21,10 +22,23 @@ export type Action = MoveAction | SwitchAction;
 
 export type Plan = Record<string, Action>;
 
+/**
+ * A Pokemon's name as it is ON THE FIELD.
+ *
+ * `set.name` is the Mega form for anything carrying a stone, so using it
+ * directly labels a Pokemon that never Mega Evolved as its Mega - which is both
+ * wrong and, in a plan you are about to execute, actively misleading about what
+ * stats it has.
+ */
+const nameOf = (m: MonState) => activeProfile(m).displayName;
+
 export function actionLabel(a: Action, state: BattleState): string {
-  if (a.kind === "switch") return `switch to ${state.mons[a.toUid]?.set.name ?? "?"}`;
+  if (a.kind === "switch") {
+    const to = state.mons[a.toUid];
+    return `switch to ${to ? nameOf(to) : "?"}`;
+  }
   const t = a.targetUid ? state.mons[a.targetUid] : null;
-  return t ? `${a.moveName} -> ${t.set.name}` : a.moveName;
+  return t ? `${a.moveName} -> ${nameOf(t)}` : a.moveName;
 }
 
 /** Does this move hit both foes? */
@@ -64,6 +78,14 @@ export function legalActions(
 ): Action[] {
   const out: Action[] = [];
   const foes = activeMons(state, mon.side === "me" ? "opp" : "me");
+
+  // Recharging removes the turn entirely - you do not even get to switch. One
+  // no-op action is returned so the search still has something to play; the
+  // simulator recognises it and does nothing. Leaving the list empty would let
+  // the planner quietly skip the cost of the move that caused it.
+  if (mon.mustRecharge) {
+    return [{ kind: "move", moveName: mon.lastMoveName ?? "Recharge" }];
+  }
 
   // Encore removes the choice entirely.
   const source =

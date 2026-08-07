@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { useBattle } from "../state/store.tsx";
 import { parseRoster } from "../input/parseRoster.ts";
 import { makeMonState } from "../state/reducer.ts";
-import { setFromThreat } from "../model/factory.ts";
 import { broughtCounts, possibleSwitchIns } from "../battle/roster.ts";
 import { megaRead } from "../battle/mega.ts";
 import { ROSTER_SIZE } from "../model/types.ts";
@@ -22,8 +21,8 @@ export default function TeamPreview() {
   const add = () => {
     if (!parsed) return;
     const mons = parsed.entries
-      .filter((e) => e.threat)
-      .map((e) => makeMonState(setFromThreat(e.threat!), "opp", "threat"));
+      .filter((e) => e.species)
+      .map((e) => makeMonState(e.species!.make(), "opp", "threat"));
     if (!mons.length) return;
     dispatch({ type: "ADD_ROSTER", side: "opp", mons });
     setText("");
@@ -85,7 +84,12 @@ export default function TeamPreview() {
                   <span className="parse-idx mono">{i + 1}</span>
                   <span className="dimmer">{e.raw}</span>
                   <span className="dim">→</span>
-                  <span className="parse-move">{e.threat?.name ?? "?"}</span>
+                  <span className="parse-move">{e.species?.name ?? "?"}</span>
+                  {e.statsOnly && (
+                    <span className="tag assumed" title="Stats only - no competitive set on file">
+                      stats only
+                    </span>
+                  )}
                   {e.problem && <span className="tag status">{e.problem}</span>}
                 </div>
               ))}
@@ -93,9 +97,8 @@ export default function TeamPreview() {
           )}
           {parsed && parsed.unknown.length > 0 && (
             <div className="hint warn" style={{ marginTop: 6 }}>
-              Not in the database: <b>{parsed.unknown.join(", ")}</b>. Add them to
-              src/data/threats.js, or leave them out and the planner will simply not know
-              about them.
+              Not legal in this format: <b>{parsed.unknown.join(", ")}</b>. Check the
+              spelling — all 310 Reg M-A/M-B Pokemon are searchable.
             </div>
           )}
           <div className="row" style={{ marginTop: 8 }}>

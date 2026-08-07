@@ -3,6 +3,7 @@
 // The question these answer: does the planner actually know they can switch?
 // A "pin" computed against an opponent with no bench is not a pin.
 import { newBattleState, monFromThreatId, setFromThreat } from "./src/app/model/factory.ts";
+import { legacyBattle } from "./test-fixture.mjs";
 import { reduce, makeMonState } from "./src/app/state/reducer.ts";
 import { THREATS } from "./src/data/threats.js";
 import { legalActions, actionProfiles } from "./src/app/sim/actions.ts";
@@ -11,6 +12,7 @@ import { searchPlans } from "./src/app/search/plan.ts";
 import { possibleSwitchIns, broughtCounts } from "./src/app/battle/roster.ts";
 import { parseRoster } from "./src/app/input/parseRoster.ts";
 import { resolveMatchup } from "./src/app/battle/damage.ts";
+import { parseTurn } from "./src/app/input/parseTurn.ts";
 
 let ok = 0, total = 0;
 const check = (pass, label) => {
@@ -23,7 +25,7 @@ const mine = (s, n) => Object.values(s.mons).find((m) => m.side === "me" && m.se
 const opp = (s, id) => Object.values(s.mons).find((m) => m.side === "opp" && m.set.speciesId === id);
 
 function board(activeIds, actives) {
-  let s = newBattleState();
+  let s = legacyBattle();
   for (const id of activeIds) s = reduce(s, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
   actives.forEach((n, slot) => {
     const m = mine(s, n);
@@ -164,8 +166,8 @@ console.log("-- team preview parsing --");
 {
   const p = parseRoster("zard, incin, gambit, chomp, bascu, whims");
   check(p.matched === 6, `six names matched from shorthand (${p.matched})`);
-  check(p.entries[0].threat.id === "charizard-y", `"zard" -> ${p.entries[0].threat.name}`);
-  check(p.entries[4].threat.id === "basculegion", `"bascu" -> ${p.entries[4].threat.name}`);
+  check(p.entries[0].species.id === "charizard-y", `"zard" -> ${p.entries[0].species.name}`);
+  check(p.entries[4].species.id === "basculegion", `"bascu" -> ${p.entries[4].species.name}`);
 
   const q = parseRoster("zard, someunknownmon, chomp");
   check(q.matched === 2 && q.unknown.length === 1,
@@ -173,8 +175,87 @@ console.log("-- team preview parsing --");
 
   // The same name twice must not map to one entry twice.
   const dup = parseRoster("chomp, chomp");
-  check(dup.entries[1].threat?.id !== dup.entries[0].threat?.id || dup.entries[1].threat === null,
+  check(dup.entries[1].species?.id !== dup.entries[0].species?.id || dup.entries[1].species === null,
     "a repeated name does not silently duplicate the same Pokemon");
+
+  // Anything legal is now enterable, not just the curated 25.
+  const wide = parseRoster("weavile, dragapult, snorlax, toxapex, mega gengar, mimikyu");
+  check(wide.matched === 6, `six species with no curated set still resolve (${wide.matched}/6)`);
+  check(wide.entries.every((e) => e.species), `  ${wide.entries.map((e) => e.species?.name).join(", ")}`);
+  check(wide.entries.some((e) => e.statsOnly), "  and they are flagged as stats-only");
+}
+
+// ===========================================================================
+// Typing a switch has to WORK, in whatever words come out mid-game.
+//
+// This is the main way the board stays in sync during a real match: you say
+// what happened and the tool follows. A phrasing it does not know is a board
+// that quietly stops matching the game.
+// ===========================================================================
+console.log("\n-- 'he switched X for Y', however you phrase it --");
+{
+  let base = newBattleState();
+  for (const id of ["garchomp", "charizard-y", "incineroar", "whimsicott"]) {
+    base = reduce(base, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
+  }
+  const activeNames = (s) =>
+    s.sides.opp.active.map((u) => (u ? s.mons[u].set.name : "-")).join(" + ");
+
+  const phrasings = [
+    ["zard switch incin", "Incineroar"],
+    ["zard switches to incin", "Incineroar"],
+    ["zard switched for incin", "Incineroar"],
+    ["zard goes to whims", "Whimsicott"],
+    ["zard out for whims", "Whimsicott"],
+    ["zard back to incin", "Incineroar"],
+    ["zard subbed incin", "Incineroar"],
+    ["zard pivots whims", "Whimsicott"],
+    ["zard -> incin", "Incineroar"],
+  ];
+  for (const [script, expect] of phrasings) {
+    const p = parseTurn(script, base);
+    const after = reduce(base, {
+      type: "APPLY_TURN_SCRIPT", entries: p.entries, effects: p.effects, script,
+    });
+    check(activeNames(after).includes(expect),
+      `"${script}" -> ${activeNames(after)}`);
+  }
+
+  // A switch alongside a move: both halves land.
+  {
+    const script = "chomp earthquake, zard switch incin";
+    const p = parseTurn(script, base);
+    const after = reduce(base, {
+      type: "APPLY_TURN_SCRIPT", entries: p.entries, effects: p.effects, script,
+    });
+    check(activeNames(after) === "Garchomp + Incineroar",
+      `"${script}" -> ${activeNames(after)}`);
+    check(after.mons[opp(after, "garchomp").uid].revealed.moves.includes("Earthquake"),
+      "  and the move it used is now confirmed on its sheet");
+  }
+
+  // A segment the parser cannot resolve must NOT take the rest of the turn
+  // down with it. This used to throw and lose everything you had typed.
+  {
+    const script = "chomp earthquake, blargh flurb";
+    const p = parseTurn(script, base);
+    check(p.entries.some((e) => !e.actorUid || !e.action),
+      "the parser reports the unresolvable segment rather than dropping it");
+    let after = null;
+    let threw = null;
+    try {
+      after = reduce(base, {
+        type: "APPLY_TURN_SCRIPT", entries: p.entries, effects: p.effects, script,
+      });
+    } catch (err) {
+      threw = err;
+    }
+    check(threw === null, `applying a partly-unparseable turn does not throw${threw ? ": " + threw.message : ""}`);
+    check(after && after.mons[opp(after, "garchomp").uid].revealed.moves.includes("Earthquake"),
+      "  the half it DID understand is still applied");
+    check(after && after.log.some((l) => /Skipped/.test(l.text)),
+      "  and the log says which segment was skipped");
+  }
 }
 
 console.log(`\n${ok}/${total} passed`);

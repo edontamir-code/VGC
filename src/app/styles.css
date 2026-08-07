@@ -519,6 +519,118 @@ button { font-family: inherit; }
   font-size: 12.5px;
 }
 
+/* --- team preview / answer matrix ---------------------------------------- */
+.headline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.headline.good { border-color: rgba(53, 208, 127, 0.45); background: rgba(53, 208, 127, 0.05); }
+.headline.bad { border-color: rgba(255, 77, 94, 0.4); background: rgba(255, 77, 94, 0.045); }
+.headline-num {
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  flex: 0 0 auto;
+}
+.headline.good .headline-num { color: var(--live); }
+.headline.bad .headline-num { color: var(--dead); }
+.headline-num .dimmer { font-size: 20px; font-weight: 600; }
+.headline-text { min-width: 0; }
+.headline-main { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+
+.bring-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+@media (max-width: 560px) { .bring-row { grid-template-columns: repeat(2, 1fr); } }
+.bring-mon {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--live);
+  border-radius: 9px;
+  padding: 8px 9px;
+}
+.bring-name { font-weight: 700; font-size: 12.5px; line-height: 1.25; }
+.bring-types { font-size: 10px; color: var(--dimmer); margin-top: 2px; }
+
+.because {
+  font-size: 12px;
+  color: var(--dim);
+  padding-left: 12px;
+  position: relative;
+}
+.because::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--live);
+}
+
+.threatcard {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+.threatcard.uncovered { border-color: rgba(255, 77, 94, 0.45); background: rgba(255, 77, 94, 0.05); }
+.threatcard-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.answer-row { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+.chip-answer {
+  border: 1px solid rgba(53, 208, 127, 0.4);
+  background: var(--live-bg);
+  color: var(--live);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.chip-answer:hover { filter: brightness(1.2); }
+.loses-row { font-size: 11px; color: var(--dead); margin-top: 6px; opacity: 0.85; }
+
+table.matrix { font-size: 11px; }
+table.matrix th.matrix-col {
+  text-align: center;
+  font-size: 9.5px;
+  max-width: 74px;
+  white-space: normal;
+  line-height: 1.2;
+  padding: 5px 4px;
+}
+td.matrix-row {
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+  padding-right: 10px;
+  color: var(--me);
+}
+td.matrix-cell { padding: 3px; text-align: center; }
+.cellbtn {
+  width: 100%;
+  min-width: 44px;
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.v-answer { background: var(--live-bg); color: var(--live); border-color: rgba(53, 208, 127, 0.4); }
+.v-slow { background: rgba(124, 156, 255, 0.1); color: var(--accent); border-color: rgba(124, 156, 255, 0.35); }
+.v-trade { background: var(--roll-bg); color: var(--roll); border-color: rgba(245, 166, 35, 0.4); }
+.v-loses { background: var(--dead-bg); color: var(--dead); border-color: rgba(255, 77, 94, 0.4); }
+.v-walled { background: var(--panel-3); color: var(--dimmer); }
+
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 9px; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); }
+.legend-item .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
 .teamrow {
   display: flex;
   align-items: center;
@@ -541,6 +653,14 @@ button { font-family: inherit; }
   font-size: 12.5px;
 }
 .poolmove.seen { background: rgba(53, 208, 127, 0.08); }
+.prob {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  min-width: 34px;
+  text-align: right;
+}
+.prob.certain { color: var(--live); font-weight: 700; }
 .poolmove.out { opacity: 0.5; text-decoration: line-through; }
 
 .line.discounted { opacity: 0.72; border-style: dashed; }
@@ -674,3 +794,169 @@ tr.is-opp td:first-child { color: var(--opp); font-weight: 600; }
   line-height: 1.45;
 }
 .warn { color: var(--roll); }
+
+/* --- Mega selector: only one of yours Mega Evolves per battle -------------- */
+.mega-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.chip-mega {
+  position: relative;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--dim);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  min-height: 32px;
+}
+.chip-mega:hover { border-color: var(--accent); color: var(--fg); }
+.chip-mega.on {
+  background: rgba(124, 156, 255, 0.14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chip-rec {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--live);
+  opacity: 0.9;
+}
+.bring-mon.is-mega { border-color: var(--accent); background: rgba(124, 156, 255, 0.08); }
+.bring-mega {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-top: 3px;
+}
+.row-mega {
+  margin-left: 5px;
+  font-size: 8.5px;
+  font-weight: 800;
+  color: var(--accent);
+  vertical-align: super;
+}
+
+/* --- item-conditional damage ---------------------------------------------- */
+.itemswing {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--roll-bg);
+  border: 1px solid rgba(245, 166, 35, 0.32);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+.itemswing .tag { flex: none; }
+
+/* --- conditional cores (Trick Room, Tailwind) ----------------------------- */
+.plancard {
+  background: var(--panel-2);
+  border: 1px solid rgba(124, 156, 255, 0.3);
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+.plancard .risk-text { margin-top: 6px; }
+.chip-answer.static { cursor: default; font-weight: 500; }
+.because.conditional::before { background: var(--accent); }
+.because.conditional { color: var(--dim); }
+.megagap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+/* --- game history --------------------------------------------------------- */
+.newgame-ask { font-size: 11px; color: var(--dim); margin-right: 2px; }
+.btn.good { color: var(--live); }
+.logline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--panel-3);
+  font-size: 11.5px;
+}
+.logline-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.row { display: flex; align-items: center; }
+.grow { flex: 1; min-width: 0; }
+.leadpanel { border-color: rgba(245, 166, 35, 0.35); }
+
+/* --- the command console -------------------------------------------------- */
+.console { border-color: rgba(124, 156, 255, 0.35); }
+.con-log {
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-right: 2px;
+}
+.con-entry {
+  border-left: 2px solid var(--line);
+  padding-left: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.con-said { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+.con-caret { color: var(--accent); font-weight: 700; }
+.con-echo { font-size: 11.5px; color: var(--dim); }
+.con-problem { font-size: 11.5px; color: var(--roll); }
+.con-headline {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+  margin-top: 2px;
+}
+.con-urgent {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dead);
+  background: var(--dead-bg);
+  border: 1px solid rgba(255, 77, 94, 0.35);
+  border-radius: 7px;
+  padding: 6px 8px;
+  line-height: 1.4;
+}
+.con-note { line-height: 1.45; }
+.con-preview {
+  font-size: 11px;
+  color: var(--dim);
+  font-family: var(--mono);
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.con-preview.bad { color: var(--roll); }
+.con-thinking {
+  font-size: 11.5px;
+  color: var(--dim);
+  font-style: italic;
+  padding: 4px 0;
+}
+.con-planner {
+  margin-top: 8px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: rgba(124, 156, 255, 0.07);
+  border: 1px solid rgba(124, 156, 255, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.con-planner.proven { border-color: rgba(53, 208, 127, 0.45); background: rgba(53, 208, 127, 0.07); }
+.con-planner .con-headline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

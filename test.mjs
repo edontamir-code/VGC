@@ -3,8 +3,10 @@
 // make a change pass; if one breaks, the engine change is wrong.
 import { computeStats, matchup } from "./src/engine.js";
 import { effectiveSpeed, faster } from "./src/speed.js";
-import { TEAM } from "./src/data/team.js";
-import { THREATS } from "./src/data/threats.js";
+// The FROZEN team and opposing sets these numbers were verified against.
+// See team.legacy.js / threats.legacy.js for why they are pinned.
+import { TEAM } from "./src/data/team.legacy.js";
+import { THREATS } from "./src/data/threats.legacy.js";
 import { MOVES, movePower } from "./src/data/moves.js";
 
 const D = n => TEAM.find(x=>x.name===n);

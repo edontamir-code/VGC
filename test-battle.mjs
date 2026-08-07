@@ -5,6 +5,7 @@
 // behaviour (field-tracked weather, editable sets, current-HP verdicts,
 // scouting boundaries, undo) works as BATTLE_MODEL.md specifies.
 import { newBattleState, monFromThreatId, newSession } from "./src/app/model/factory.ts";
+import { legacyBattle, legacyThreat } from "./test-fixture.mjs";
 import { reduce, sessionReduce } from "./src/app/state/reducer.ts";
 import { resolveMatchup } from "./src/app/battle/damage.ts";
 import { movesFirst, currentSpeed } from "./src/app/battle/speed.ts";
@@ -27,9 +28,9 @@ const oppNamed = (s, id) =>
   Object.values(s.mons).find((m) => m.side === "opp" && m.set.speciesId === id);
 
 function boardWith(threatIds) {
-  let s = newBattleState();
+  let s = legacyBattle();
   for (const id of threatIds) {
-    s = reduce(s, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
+    s = reduce(s, { type: "ADD_MON", side: "opp", mon: legacyThreat(id) });
   }
   return s;
 }
@@ -104,10 +105,30 @@ console.log("-- engine parity through BattleState --");
 }
 
 // Garchomp Earthquake -> Mega Delphox: immune via Levitate.
+//
+// This fixture team carries TWO Mega stones (Staraptor and Delphox) and only
+// one Pokemon Mega Evolves per battle, so Delphox has to be designated first.
+// A board that hands out Levitate to a Delphox that never Mega Evolved would be
+// telling you that you are immune to an Earthquake that kills you.
 {
   let s = boardWith(["garchomp"]);
   const chomp = oppNamed(s, "garchomp");
   const delph = mineNamed(s, "Delphox");
+
+  const megasByDefault = Object.values(s.mons).filter((m) => m.side === "me" && m.hasMega);
+  check(megasByDefault.length === 1,
+    `a fresh board Mega Evolves exactly one of mine (${megasByDefault.map((m) => m.set.name).join(", ")})`);
+  check(!s.mons[delph.uid].hasMega,
+    "Delphox is NOT Mega'd by default - Staraptor holds the side's Mega");
+
+  const before = resolveMatchup(s.mons[chomp.uid], s.mons[delph.uid], "Earthquake", s);
+  check(before.typeMult > 0,
+    `  un-Mega'd Delphox has no Levitate and is hit: ${before.maxPct}% x${before.typeMult}`);
+
+  s = reduce(s, { type: "SET_MEGA", side: "me", uid: delph.uid });
+  check(s.mons[delph.uid].hasMega && !s.mons[mineNamed(s, "Staraptor").uid].hasMega,
+    "SET_MEGA moves the Mega to Delphox and takes it off Staraptor");
+
   const r = resolveMatchup(s.mons[chomp.uid], s.mons[delph.uid], "Earthquake", s);
   check(r.typeMult === 0 && r.verdict === "IMMUNE",
     `Garchomp EQ -> M-Delphox: ${r.verdict} (Levitate)`);
@@ -251,7 +272,7 @@ console.log("\n-- turn loop, timers and undo --");
   check(sess.present.turn === before, `redo returns to turn ${sess.present.turn}`);
 
   // Weather with a 5-turn default should be gone after 5 turns.
-  let w = newBattleState();
+  let w = legacyBattle();
   w = reduce(w, { type: "SET_WEATHER", kind: "sun" });
   for (let i = 0; i < 5; i++) w = reduce(w, { type: "NEXT_TURN" });
   check(w.field.weather === null, "sun expires after its 5 turns");

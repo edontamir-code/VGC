@@ -1,5 +1,6 @@
 // Turn-script parsing + speed inference - run: node test-input.mjs
 import { newBattleState, monFromThreatId } from "./src/app/model/factory.ts";
+import { legacyBattle } from "./test-fixture.mjs";
 import { reduce } from "./src/app/state/reducer.ts";
 import { parseTurn } from "./src/app/input/parseTurn.ts";
 import {
@@ -18,7 +19,7 @@ const mine = (s, n) => Object.values(s.mons).find((m) => m.side === "me" && m.se
 const opp = (s, id) => Object.values(s.mons).find((m) => m.side === "opp" && m.set.speciesId === id);
 
 function board(ids, actives) {
-  let s = newBattleState();
+  let s = legacyBattle();
   for (const id of ids) s = reduce(s, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
   actives.forEach((n, slot) => {
     const m = mine(s, n);

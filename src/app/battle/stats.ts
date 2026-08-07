@@ -7,7 +7,7 @@ import { computeStats } from "../../engine.js";
 import { stageMult } from "../../speed.js";
 import type { Stats } from "../../engine.js";
 import type { BattleState, MonState, Stages } from "../model/types.ts";
-import { PRE_MEGA } from "../model/megaforms.ts";
+import { preMegaProfile } from "../model/megaforms.ts";
 import { abilityStatMults, applyStatMults } from "./abilities.ts";
 
 /** The species profile that is actually on the field right now. */
@@ -21,12 +21,29 @@ export interface ActiveProfile {
   inferred: boolean;
 }
 
+/**
+ * The base form's display name. Derived from the Mega name ("Mega Raichu Y" ->
+ * "Raichu") because the species id is a lowercase database key for opponents
+ * and would otherwise be shown to the user verbatim.
+ */
+function preMegaName(megaName: string, speciesId: string): string {
+  const m = /^Mega\s+(.+?)(?:\s+[XY])?$/i.exec(megaName);
+  if (m) return m[1];
+  if (/^[a-z0-9-]+$/.test(speciesId)) {
+    return speciesId
+      .split("-")
+      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+      .join("-");
+  }
+  return speciesId;
+}
+
 export function activeProfile(mon: MonState): ActiveProfile {
   const s = mon.set;
   if (!mon.hasMega && s.baseForm) {
-    const pre = PRE_MEGA[s.speciesId];
+    const pre = preMegaProfile(s.speciesId);
     return {
-      displayName: s.speciesId,
+      displayName: preMegaName(s.name, s.speciesId),
       base: s.baseForm,
       types: pre?.types ?? s.types,
       ability: pre?.ability ?? s.ability,

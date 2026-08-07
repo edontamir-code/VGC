@@ -1,5 +1,6 @@
 // Redirection, ability modifiers and Mega rules - run: node test-abilities.mjs
 import { newBattleState, monFromThreatId, setFromThreat } from "./src/app/model/factory.ts";
+import { legacyBattle } from "./test-fixture.mjs";
 import { reduce, makeMonState } from "./src/app/state/reducer.ts";
 import { THREATS } from "./src/data/threats.js";
 import { simulateTurn } from "./src/app/sim/turn.ts";
@@ -19,7 +20,7 @@ const mine = (s, n) => Object.values(s.mons).find((m) => m.side === "me" && m.se
 const opp = (s, id) => Object.values(s.mons).find((m) => m.side === "opp" && m.set.speciesId === id);
 
 function board(oppIds, actives) {
-  let s = newBattleState();
+  let s = legacyBattle();
   for (const id of oppIds) s = reduce(s, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
   actives.forEach((n, slot) => {
     const m = mine(s, n);
@@ -80,6 +81,9 @@ console.log("\n-- ability redirection --");
   const glim = mine(s, "Glimmora");
   const raichu = opp(s, "raichu");
   const zard = opp(s, "charizard-y");
+  // Raichu only has Lightning Rod BEFORE it Megas - Mega Raichu Y has No Guard.
+  // Drop it to the base form so the redirection ability is actually live.
+  s = reduce(s, { type: "TOGGLE_MEGA", uid: raichu.uid });
   // Lightning Rod pulls Electric moves even with no Rage Powder in play.
   s = reduce(s, { type: "EDIT_SET", uid: glim.uid, patch: { moves: ["Thunderbolt", "Power Gem", "Sludge Bomb", "Earth Power"] } });
   const r = simulateTurn(s, {
@@ -134,6 +138,12 @@ console.log("\n-- other ability modifiers --");
   let s = board(["incineroar"], ["Kingambit", "Delphox"]);
   const inc = opp(s, "incineroar");
   const delph = mine(s, "Delphox");
+
+  // Delphox has to be the side's Mega for its Mega-form ability to be live at
+  // all: un-Mega'd, the active profile comes from the PRE-Mega line and editing
+  // set.ability changes an ability that is not on the field.
+  s = reduce(s, { type: "SET_MEGA", side: "me", uid: delph.uid });
+  check(s.mons[delph.uid].hasMega, "Delphox is the designated Mega for this board");
 
   const base = resolveMatchup(s.mons[inc.uid], s.mons[delph.uid], "Flare Blitz", s);
   const thick = reduce(s, { type: "EDIT_SET", uid: delph.uid, patch: { ability: "Thick Fat" } });

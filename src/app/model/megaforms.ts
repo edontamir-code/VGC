@@ -21,6 +21,19 @@ export interface PreMegaProfile {
   assumed?: boolean;
 }
 
+/**
+ * Look a pre-Mega profile up by species.
+ *
+ * Team entries use capitalised species names ("Raichu") while threat entries
+ * use lowercase ids ("raichu"), so a plain object lookup silently missed for
+ * every opponent - and a mon that had not Mega Evolved kept its MEGA ability.
+ * Normalise both sides.
+ */
+export function preMegaProfile(speciesId: string): PreMegaProfile | undefined {
+  const key = String(speciesId).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return PRE_MEGA_BY_KEY[key];
+}
+
 export const PRE_MEGA: Record<string, PreMegaProfile> = {
   Staraptor: {
     types: ["Normal", "Flying"],
@@ -36,6 +49,15 @@ export const PRE_MEGA: Record<string, PreMegaProfile> = {
     assumed: true,
   },
 
+  Raichu: {
+    types: ["Electric"],
+    // Mega Raichu Y has NO GUARD; the base form has Lightning Rod, which is a
+    // completely different Pokemon to play against - redirection instead of
+    // perfect accuracy.
+    ability: "Lightning Rod",
+    immuneTypes: [],
+  },
+
   // --- Opposing Megas -----------------------------------------------------
   // The abilities below are what pikalytics reports for the SPECIES in Reg M-B
   // S3 — which is the un-Mega'd form. The Mega ability lives on the threat
@@ -46,3 +68,10 @@ export const PRE_MEGA: Record<string, PreMegaProfile> = {
   mawile: { types: ["Steel", "Fairy"], ability: "Intimidate", immuneTypes: [] },
   sableye: { types: ["Dark", "Ghost"], ability: "Prankster", immuneTypes: [], assumed: true },
 };
+
+const PRE_MEGA_BY_KEY: Record<string, PreMegaProfile> = Object.fromEntries(
+  Object.entries(PRE_MEGA).map(([k, v]) => [
+    k.toLowerCase().replace(/[^a-z0-9]/g, ""),
+    v,
+  ])
+);

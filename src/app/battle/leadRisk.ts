@@ -47,7 +47,7 @@ export interface LeadRisk {
 }
 
 const name = (m: MonState) =>
-  m.hasMega || !m.set.baseForm ? m.set.name : m.set.speciesId;
+  activeProfile(m).displayName;
 
 /** Their damaging moves, resolved onto one of my mons. */
 function hitsOn(

@@ -9,6 +9,8 @@
 // ===========================================================================
 import { BROUGHT_COUNT } from "../model/types.ts";
 import type { BattleState, MonState, SideId } from "../model/types.ts";
+import { dutyValue } from "../battle/resources.ts";
+import type { DutyMap } from "../battle/resources.ts";
 
 export interface EvalWeights {
   /** A living Pokemon is worth far more than any amount of chip damage. */
@@ -63,7 +65,12 @@ function broughtWeight(state: BattleState, side: SideId): (m: MonState) => numbe
   };
 }
 
-function sideScore(state: BattleState, side: SideId, w: EvalWeights): number {
+function sideScore(
+  state: BattleState,
+  side: SideId,
+  w: EvalWeights,
+  duties?: DutyMap
+): number {
   let score = 0;
   const weight = broughtWeight(state, side);
   for (const m of sideMons(state, side)) {
@@ -76,6 +83,10 @@ function sideScore(state: BattleState, side: SideId, w: EvalWeights): number {
     const offense = m.stages.atk + m.stages.spa + m.stages.spe;
     const defense = m.stages.def + m.stages.spd;
     score += k * w.boostStage * (offense + defense * 0.6);
+    // A Pokemon is worth the threats it is holding shut, not just its HP bar.
+    // Without this the search happily trades your only answer to their back
+    // line for a small material edge, which is how games are actually lost.
+    if (side === "me" && duties) score += dutyValue(duties[m.uid]);
   }
   score += w.tailwindTurn * state.field.tailwind[side];
   const sc = state.field.screens[side];
@@ -83,12 +94,20 @@ function sideScore(state: BattleState, side: SideId, w: EvalWeights): number {
   return score;
 }
 
-/** Positive = good for me. */
+/**
+ * Positive = good for me.
+ *
+ * `duties` is who on my side is the only answer to what, computed ONCE before
+ * the search and passed down. This function runs hundreds of thousands of times
+ * per search; building the answer matrix inside it would be correct and
+ * unusably slow. Omitting it just turns the term off.
+ */
 export function evaluate(
   state: BattleState,
-  w: EvalWeights = DEFAULT_WEIGHTS
+  w: EvalWeights = DEFAULT_WEIGHTS,
+  duties?: DutyMap
 ): number {
-  let score = sideScore(state, "me", w) - sideScore(state, "opp", w);
+  let score = sideScore(state, "me", w, duties) - sideScore(state, "opp", w);
 
   // Trick Room is worth whatever it does to the actual speed matchup, so it is
   // credited to whichever side is slower on average.
