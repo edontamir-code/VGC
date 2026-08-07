@@ -5,8 +5,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
 import type { ReactNode } from "react";
 import { newSession } from "../model/factory.ts";
-import { effectiveTeam } from "./myTeam.ts";
-import type { BattleState, Session } from "../model/types.ts";
+import { effectiveTeam, teamFingerprint } from "./myTeam.ts";
+import type { BattleState, MonSet, Session } from "../model/types.ts";
 import { sessionReduce } from "./reducer.ts";
 import type { SessionAction } from "./reducer.ts";
 import { finishGame, logTurn, startGame } from "../history/store.ts";
@@ -44,16 +44,44 @@ function migrate(state: BattleState): BattleState {
   return { ...state, mons };
 }
 
+/**
+ * Is this saved board still about the team I actually have?
+ *
+ * A board persisted from an older build keeps whatever six were on it at the
+ * time. When team.js changes, that board is describing Pokemon you no longer
+ * own - and because it is restored on every load, it never goes away on its
+ * own. Comparing the saved my-side against the current team catches it.
+ */
+function boardMatchesTeam(state: BattleState, team: MonSet[]): boolean {
+  const saved = Object.values(state.mons)
+    .filter((m) => m.side === "me")
+    .map((m) => `${m.set.speciesId}:${m.set.name}`)
+    .sort()
+    .join("|");
+  return saved === teamFingerprint(team);
+}
+
 function loadSession(): Session {
+  const team = effectiveTeam();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return newSession(effectiveTeam());
+    if (!raw) return newSession(team);
     const parsed = JSON.parse(raw) as { present?: BattleState };
-    if (!parsed?.present?.mons || !parsed.present.sides) return newSession(effectiveTeam());
+    if (!parsed?.present?.mons || !parsed.present.sides) return newSession(team);
+    // A board about a team you no longer have is worse than no board: it looks
+    // like a live game and every number on it is about the wrong Pokemon.
+    if (!boardMatchesTeam(parsed.present, team)) {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        /* ignore */
+      }
+      return newSession(team);
+    }
     // Undo history is intentionally not persisted.
     return { present: migrate(parsed.present), past: [], future: [] };
   } catch {
-    return newSession(effectiveTeam());
+    return newSession(team);
   }
 }
 

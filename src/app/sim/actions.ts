@@ -99,7 +99,10 @@ export function legalActions(
     const status = STATUS_MOVES[moveName];
 
     if (data?.firstTurnOnly && mon.turnsOnField > 0) continue;
-    if (isProtect(moveName) && mon.protectStreak > 0) continue;
+    // A repeat Protect is UNRELIABLE (1/3, then 1/9), not illegal. Deleting it
+    // here meant the planner could never weigh a 33% Protect against a certain
+    // loss - and sometimes 33% is the whole game. The simulator still fails it
+    // under worst-case rolls, so no GUARANTEE can rest on it.
 
     if (!data) {
       if (!status) continue;

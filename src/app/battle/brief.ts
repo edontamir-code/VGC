@@ -20,6 +20,8 @@ import { rankedLinesWithRisk } from "./leadRisk.ts";
 import { bestBoardPlay } from "./spread.ts";
 import { budgetRead } from "./damageInference.ts";
 import { resourceWarnings, unansweredThreats } from "./resources.ts";
+import { doubleProtect, fakeOutCalls } from "./protect.ts";
+import { moveProbability } from "./inference.ts";
 import type { PlanLine } from "../search/plan.ts";
 import { activeMons } from "./resolver.ts";
 import { activeProfile } from "./stats.ts";
@@ -126,8 +128,23 @@ function leadBrief(state: BattleState): Brief {
   const res = resourceLines(state);
   urgent.push(...res.urgent);
   notes.push(...res.notes);
+  for (const p of protectLines(state)) advice.push(p);
 
   return { phase: "leads", headline: read.headline, advice, urgent, notes };
+}
+
+/**
+ * Protect, which is the most-used move in the format.
+ *
+ * Two things worth saying every turn: whether it is free right now, and - when
+ * a Fake Out is coming - which Pokemon to spend it on.
+ */
+function protectLines(state: BattleState): string[] {
+  const out: string[] = [];
+  const dp = doubleProtect(state);
+  if (dp.text) out.push(dp.text);
+  for (const call of fakeOutCalls(state, moveProbability)) out.push(call.text);
+  return out;
 }
 
 function turnBrief(state: BattleState): Brief {
@@ -158,6 +175,7 @@ function turnBrief(state: BattleState): Brief {
   const res = resourceLines(state);
   urgent.push(...res.urgent);
   notes.push(...res.notes);
+  for (const p of protectLines(state)) notes.push(p);
 
   const top = lines.find((l) => l.kind === "attack") ?? lines[0];
   if (top) {

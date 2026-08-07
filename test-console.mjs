@@ -15,6 +15,8 @@ import {
 } from "./src/app/battle/damageInference.ts";
 import { resolveMatchup } from "./src/app/battle/damage.ts";
 import { activeProfile } from "./src/app/battle/stats.ts";
+import { teamFingerprint } from "./src/app/state/myTeam.ts";
+import { builtInTeam } from "./src/app/model/species.ts";
 
 let ok = 0, total = 0;
 const check = (pass, label) => {
@@ -449,6 +451,59 @@ console.log("\n-- the un-Mega'd stone holder is never called a Mega --");
     `the actual Mega is still named "${nameOf(raichu)}"`);
   check(lines.some((l) => /Mega Raichu Y/.test(l.label)) || lines.length === 0,
     "  and the planner uses that name for it");
+}
+
+// ===========================================================================
+// A saved team must not outlive the file it came from.
+//
+// The deployed app kept loading a Glimmora that had not been on the team for
+// weeks: localStorage held a copy saved from an older build, and effectiveTeam
+// preferred it over team.js forever. A stale board is worse than no board -
+// it looks like a live game and every number on it is about Pokemon you do not
+// own.
+// ===========================================================================
+console.log("\n-- a saved team does not outlive team.js --");
+{
+  const current = builtInTeam();
+  const fp = teamFingerprint(current);
+  check(fp.length > 0 && fp.includes(":"), "the team has a fingerprint");
+  check(teamFingerprint([...current].reverse()) === fp,
+    "the fingerprint is order-independent - the same six in any order match");
+
+  // Any change to the six changes it.
+  const swapped = [...current.slice(1), { ...current[0], speciesId: "Glimmora", name: "Glimmora" }];
+  check(teamFingerprint(swapped) !== fp,
+    "swapping a Pokemon in changes the fingerprint");
+
+  // The board check is the same comparison, applied to the my-side of a board.
+  const board = newBattleState();
+  const mineOnBoard = Object.values(board.mons)
+    .filter((m) => m.side === "me")
+    .map((m) => `${m.set.speciesId}:${m.set.name}`)
+    .sort()
+    .join("|");
+  check(mineOnBoard === fp,
+    "a freshly built board fingerprints identically to the team it was built from");
+
+  // A board carrying an old Pokemon does NOT match, which is what triggers the
+  // discard on load.
+  const stale = {
+    ...board,
+    mons: Object.fromEntries(
+      Object.entries(board.mons).map(([uid, m], i) =>
+        i === 0 && m.side === "me"
+          ? [uid, { ...m, set: { ...m.set, speciesId: "Glimmora", name: "Glimmora" } }]
+          : [uid, m]
+      )
+    ),
+  };
+  const staleFp = Object.values(stale.mons)
+    .filter((m) => m.side === "me")
+    .map((m) => `${m.set.speciesId}:${m.set.name}`)
+    .sort()
+    .join("|");
+  check(staleFp !== fp,
+    "a board still carrying Glimmora does not match the current team - so it gets discarded");
 }
 
 console.log(`\n${ok}/${total} passed`);

@@ -13,6 +13,7 @@ import { leadRisks } from "./src/app/battle/leadRisk.ts";
 import { scout } from "./src/app/battle/scouting.ts";
 import { effectivePriority } from "./src/app/battle/moves.ts";
 import { isGrounded } from "./src/app/battle/terrain.ts";
+import { protectSuccessChance } from "./src/app/battle/protect.ts";
 import { resolveMatchup, clearMatchupCache } from "./src/app/battle/damage.ts";
 
 let ok = 0, total = 0;
@@ -80,10 +81,15 @@ console.log("-- Protect --");
     [sneas.uid]: { kind: "move", moveName: "Close Combat", targetUid: whim.uid },
   }, WORST);
   check(twice.state.mons[whim.uid].curHP < afterProtect.mons[whim.uid].curHP,
-    "consecutive Protect FAILS - the planner never leans on it");
-  check(!legalActions(afterProtect.mons[whim.uid], afterProtect).some(
-    (a) => a.kind === "move" && a.moveName === "Protect"),
-    "a repeat Protect is not even offered as a legal action");
+    "consecutive Protect FAILS under worst-case rolls - no pin leans on it");
+
+  // Whimsicott does not actually carry Protect, so a legality check against IT
+  // would pass no matter what the rule was. Use a Pokemon that has the move.
+  check(!whim.set.moves.includes("Protect"),
+    "  (Whimsicott has no Protect - the simulator applies the plan it is given)");
+  const delphA = mine(s, "Delphox");
+  check(scout(s.mons[delphA.uid]).arsenal.includes("Protect"),
+    "Delphox does carry Protect, so it is the honest subject for legality");
 }
 
 // ===========================================================================
@@ -443,10 +449,38 @@ console.log("\n-- Protect is per-Pokemon, not per-side --");
   check(t2Base.mons[whim.uid].protectStreak === 1 && t2Base.mons[delph.uid].protectStreak === 1,
     "each mon carries its own Protect streak");
 
-  // Delphox actually carries Protect, so use it for the legality check.
-  check(!legalActions(t2Base.mons[delph.uid], t2Base).some(
+  // A repeat Protect is UNRELIABLE, not illegal. It has to stay in the legal
+  // move list so the planner can weigh a 33% Protect against a certain loss -
+  // deleting it meant that trade could never even be considered.
+  check(legalActions(t2Base.mons[delph.uid], t2Base).some(
     (a) => a.kind === "move" && a.moveName === "Protect"),
-    "straight after protecting, Protect is not offered again");
+    "straight after protecting, Protect is still OFFERED - it is 33%, not impossible");
+
+  // But a guarantee may never rest on it: under worst-case rolls it fails.
+  check(protectSuccessChance(0) === 1, "the first Protect in a run is guaranteed");
+  check(Math.abs(protectSuccessChance(1) - 1 / 3) < 1e-9,
+    `a second consecutive Protect is 1/3 (${(protectSuccessChance(1) * 100).toFixed(1)}%)`);
+  check(Math.abs(protectSuccessChance(2) - 1 / 9) < 1e-9,
+    `a third is 1/9 (${(protectSuccessChance(2) * 100).toFixed(1)}%)`);
+  check(protectSuccessChance(3) < protectSuccessChance(2),
+    "and it keeps dividing by three");
+
+  const repeatWorst = simulateTurn(t2Base, {
+    [delph.uid]: { kind: "move", moveName: "Protect" },
+    [sneas.uid]: { kind: "move", moveName: "Close Combat", targetUid: delph.uid },
+  }, WORST);
+  check(repeatWorst.state.mons[delph.uid].curHP < t2Base.mons[delph.uid].curHP,
+    "under worst-case rolls the repeat fails, so no pin can rest on it");
+  check(repeatWorst.events.some((e) => /33%/.test(e.text)),
+    "  and the event says what the odds actually were");
+
+  // Under best-case rolls it lands, so the upside column stays honest.
+  const repeatBest = simulateTurn(t2Base, {
+    [delph.uid]: { kind: "move", moveName: "Protect" },
+    [sneas.uid]: { kind: "move", moveName: "Close Combat", targetUid: delph.uid },
+  }, { roll: "bestForMe", tie: "me" });
+  check(repeatBest.state.mons[delph.uid].curHP === t2Base.mons[delph.uid].curHP,
+    "under best-case rolls the repeat lands - the two are reported apart");
 
   const attacked = simulateTurn(t2Base, {
     [delph.uid]: { kind: "move", moveName: "Heat Wave" },

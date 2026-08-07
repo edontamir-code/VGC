@@ -16,6 +16,7 @@ import { STATUS_MOVES } from "../battle/statusMoves.ts";
 import { speedMonOf, speedFieldOf } from "../battle/speed.ts";
 import { effectiveSpeed } from "../../speed.js";
 import { activeMons } from "../battle/resolver.ts";
+import { protectSuccessChance } from "../battle/protect.ts";
 import { isProtect } from "./actions.ts";
 import type { Action, Plan } from "./actions.ts";
 import { effectivePriority, resolveMoveType } from "../battle/moves.ts";
@@ -290,9 +291,21 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
 
     // Protect.
     if (isProtect(moveName)) {
-      // A repeat Protect is treated as failing - a guarantee may not rest on it.
-      if (actor.protectStreak > 0) {
-        events.push({ actorUid: uid, text: `${nameOf(actor)}'s ${moveName} failed (used consecutively)` });
+      // Consecutive Protects succeed 1/3 of the time, then 1/9, then 1/27. The
+      // counter is per Pokemon, so both of my actives protecting on the same
+      // turn are BOTH guaranteed - they do not share it.
+      //
+      // Under worst-case rolls a repeat is treated as failing outright, because
+      // a guarantee may never rest on a coinflip. Under best-case rolls it
+      // lands, so the upside column stays honest. The two are reported apart.
+      if (actor.protectStreak > 0 && opts.roll !== "bestForMe") {
+        const chance = protectSuccessChance(actor.protectStreak);
+        events.push({
+          actorUid: uid,
+          text:
+            `${nameOf(actor)}'s ${moveName} failed - it was ${Math.round(chance * 100)}% ` +
+            `after protecting ${actor.protectStreak === 1 ? "last turn" : `${actor.protectStreak} turns running`}`,
+        });
         s = put(s, { ...actor, protectStreak: 0 });
         continue;
       }
