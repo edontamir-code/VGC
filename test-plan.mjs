@@ -721,19 +721,72 @@ console.log("\n-- the Earthquake board --");
   check(protectLines.length > 0,
     `${protectLines.length} Protect lines are evaluated, not cut by the pre-pass`);
 
-  // DEFECT 2: the exhaustive search must not prefer walking into the Earthquake.
+  // DEFECT 2: the beam inside bestLineValue.
+  //
+  // bestLineValue is a MAX node - it returns the best of whatever it looked at.
+  // Its candidates were ranked by value with NO reply, which puts attacks in
+  // the beam and defence out, so each branch was understated by a DIFFERENT
+  // amount depending on what happened to land in its beam. A continuation that
+  // left a big attacker on the field scored high; one that needed a Protect
+  // scored low. That inverted the top-level ranking: switching the
+  // Ground-immune Pokemon out looked best because the resulting board's beam
+  // looked good, not because the line was.
+  //
+  // The fix is a reserved defensive quota in the beam. Verified against an
+  // UNLIMITED beam: both produce the same ranking, the quota ~10x faster.
   const swapRank = lines.findIndex((l) => /switch to Kingambit/.test(l.label));
-  console.log(`      top line: ${lines[0].label}`);
+  console.log(`      depth 1 top: ${lines[0].label}`);
   console.log(`      switch-into-Kingambit ranks ${swapRank + 1} of ${lines.length}`);
   check(swapRank !== 0,
     "the exhaustive search does NOT rank switching the Ground-immune Pokemon out first");
   check(lines[0].worst.exhaustive,
     "and depth 1 checked every reply, so that ranking is verified rather than beamed");
 
+  // The real regression guard: the DEEP search must now agree that this is a
+  // bad line. Before the fix it ranked it 1st at both depth 2 and depth 3.
+  for (const depth of [2, 3]) {
+    const deep = searchPlans(s, { depth, myBeam: 4, theirBeam: 4, arsenal: "possible" });
+    const rank = deep.findIndex((l) => /switch to Kingambit/.test(l.label));
+    console.log(`      depth ${depth} ranks it ${rank + 1} of ${deep.length}: ${deep[0].label.slice(0, 54)}`);
+    check(rank !== 0,
+      `depth ${depth} does not rank it first either (was rank 1 before the beam fix)`);
+  }
+}
+
+// ===========================================================================
+// The beam must never be able to delete defence outright.
+// ===========================================================================
+console.log("\n-- beams reserve room for defensive plans --");
+{
+  let s = newBattleState();
+  for (const id of ["charizard-y", "garchomp"]) {
+    s = reduce(s, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
+  }
+  const my = (n) => Object.values(s.mons).find((m) => m.side === "me" && m.set.speciesId === n);
+  s = reduce(s, { type: "SWITCH_IN", side: "me", slot: 0, uid: my("Raichu").uid });
+  s = reduce(s, { type: "SWITCH_IN", side: "me", slot: 1, uid: my("Staraptor").uid });
+
+  // Every depth has to keep them, not just depth 1 - the defect lived in the
+  // RECURSIVE beam, so a depth-1-only guarantee would have missed it entirely.
+  for (const depth of [1, 2, 3]) {
+    const lines = searchPlans(s, { depth, myBeam: 4, theirBeam: 4, arsenal: "possible" });
+    const def = lines.filter((l) => /Protect|switch/.test(l.label));
+    check(def.length > 0,
+      `depth ${depth}: ${def.length} defensive lines survive the beam`);
+  }
+
+  // And a Protect line has to be able to WIN the ranking when it deserves to.
+  const d1 = searchPlans(s, { depth: 1, myBeam: 8, theirBeam: 8, arsenal: "possible" });
+  check(/Protect/.test(d1[0].label),
+    `on this board the best line IS a Protect: ${d1[0].label}`);
+
   // The punish itself has to be found and reported, whichever line is on top.
-  const swap = lines[swapRank];
-  check(/Earthquake/.test(swap.worst.replyLabel),
-    `the switch line's worst case names the Earthquake: "${swap.worst.replyLabel}"`);
+  const raichu = my("Raichu"), star = my("Staraptor"), gambit = my("Kingambit");
+  const their = (id) => Object.values(s.mons).find((m) => m.side === "opp" && m.set.speciesId === id);
+  const zard = their("charizard-y"), chomp = their("garchomp");
+  const swap = d1.find((l) => /switch to Kingambit/.test(l.label));
+  check(swap && /Earthquake/.test(swap.worst.replyLabel),
+    `the switch line's worst case names the Earthquake: "${swap?.worst.replyLabel}"`);
 
   // And staying is genuinely better against that exact punish - same Pokemon
   // alive, more HP - which is what makes the old ranking wrong.

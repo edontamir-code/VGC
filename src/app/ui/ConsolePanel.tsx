@@ -65,13 +65,10 @@ function BriefView({ brief }: { brief: Brief }) {
   );
 }
 
-/**
- * The verified answer: depth 1, every reply checked, nothing beamed.
- * This is the line to act on.
- */
+/** The recommendation: three turns ahead. This is the line to act on. */
 function PlannerView({ p, searching }: { p: PlannerBrief | null; searching: boolean }) {
   if (!p) {
-    return searching ? <div className="con-thinking">Checking every reply...</div> : null;
+    return searching ? <div className="con-thinking">Looking three turns ahead...</div> : null;
   }
   return (
     <div className={`con-planner ${p.pinVsPossible ? "proven" : ""}`}>
@@ -89,25 +86,25 @@ function PlannerView({ p, searching }: { p: PlannerBrief | null; searching: bool
 }
 
 /**
- * The deeper search, shown ONLY when it disagrees with the verified one.
+ * The single-turn EXHAUSTIVE answer, shown only when it disagrees.
  *
- * Deliberately framed as a second opinion rather than an upgrade. It looks
- * three turns ahead but beams both sides' options, so it can miss things the
- * exhaustive single-turn search cannot - and on at least one real board it
- * preferred a switch that walks into a spread move the shallow search avoided.
+ * It cannot see a two-turn punish, but within one turn it checks every reply
+ * they have rather than a beamed sample. The two searches fail in different
+ * ways, so a disagreement is a genuine signal that the position is sharper than
+ * either number suggests - not a correction in either direction.
  */
 function DeeperView({ d }: { d: PlannerBrief | null }) {
   if (!d) return null;
   return (
     <div className="con-planner second">
       <div className="con-headline">
-        Looking {d.horizon} ahead it prefers: {d.label}
-        <span className="pin pin-none">BEAMED</span>
+        Checking every reply for one turn, it prefers: {d.label}
+        <span className="pin pin-none">1 TURN, EXHAUSTIVE</span>
       </div>
       <div className="assumptions con-note">
-        The two searches disagree. The line above was checked against EVERY reply they
-        have; this one looks further but only examines some of them, so it can be
-        confidently wrong. Treat it as a second opinion, not a correction.
+        The two searches disagree. The line above looks three turns ahead but samples
+        their replies; this one looks only one turn but checks all of them. Neither is
+        strictly better - treat the disagreement as a sign the turn is sharp.
       </div>
       {d.notes.map((n) => (
         <div key={n} className="assumptions con-note">{n}</div>
@@ -135,39 +132,37 @@ export default function ConsolePanel() {
     [text, state]
   );
 
-  // TWO searches, because they answer different questions and can disagree.
+  // TWO searches, because they answer different questions.
   //
-  //   PROOF  - depth 1, every reply checked, nothing beamed. It cannot see a
-  //            two-turn punish, but what it does say is verified.
-  //   DEEPER - depth 3 with narrow beams. Sees further, and BEAMS - so it can
-  //            be wrong in ways the shallow search is not.
+  //   DEEP  - three turns ahead, beamed. This is the recommendation.
+  //   PROOF - depth 1, every reply checked, nothing beamed. Shown only when it
+  //           DISAGREES, as a second opinion.
   //
-  // The proof search leads. That is not an aesthetic preference: on a real
-  // board (Raichu + Staraptor into Charizard-Y + Garchomp) the beamed search
-  // ranked "switch Staraptor out for Kingambit" first, which trades a
-  // Ground-IMMUNE Pokemon for one that is 2x weak to the Earthquake that is
-  // coming. The exhaustive depth-1 search ranked that 15th and correctly put
-  // "Raichu Protect + Staraptor attack" on top. Until that is understood, the
-  // verified answer is the one to show first.
+  // The deep search leads again. It was briefly demoted because it preferred
+  // switching a Ground-immune Pokemon out for a Ground-weak one; that turned
+  // out to be a beam defect in bestLineValue rather than anything about depth,
+  // and it is fixed. Keeping both and flagging disagreement is still worth the
+  // ~1.5s, because a shallow exhaustive answer catches a different class of
+  // mistake from a deep beamed one.
   const canSearch =
     activeMons(state, "opp").length > 0 && activeMons(state, "me").length > 0;
-  const proofOpts: SearchOpts = {
-    depth: 1,
-    myBeam: 8,
-    theirBeam: 8,
-    arsenal: DEFAULT_SEARCH.arsenal,
-  };
   const deepOpts: SearchOpts = {
     depth: 3,
     myBeam: 4,
     theirBeam: 4,
     arsenal: DEFAULT_SEARCH.arsenal,
   };
-  const proof = usePlanner(state, proofOpts, canSearch);
+  const proofOpts: SearchOpts = {
+    depth: 1,
+    myBeam: 8,
+    theirBeam: 8,
+    arsenal: DEFAULT_SEARCH.arsenal,
+  };
   const deep = usePlanner(state, deepOpts, canSearch);
-  const lines = proof.lines;
-  const searching = proof.searching;
-  const stale = proof.stale;
+  const proof = usePlanner(state, proofOpts, canSearch);
+  const lines = deep.lines;
+  const searching = deep.searching;
+  const stale = deep.stale;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
@@ -231,16 +226,16 @@ export default function ConsolePanel() {
   // searches land on the same line there is nothing to decide and a second box
   // saying the same thing is noise.
   useEffect(() => {
-    if (deep.searching || deep.stale || deep.lines.length === 0) return;
+    if (proof.searching || proof.stale || proof.lines.length === 0) return;
     setLog((l) => {
       if (l.length === 0) return l;
       const last = l[l.length - 1];
       if (last.forState !== state || last.deeper || !last.planner) return l;
-      const d = plannerBrief(deep.lines, last.planner.label);
+      const d = plannerBrief(proof.lines, last.planner.label);
       if (!d || !d.disagrees) return l;
       return [...l.slice(0, -1), { ...last, deeper: d }];
     });
-  }, [deep.lines, deep.searching, deep.stale, state]);
+  }, [proof.lines, proof.searching, proof.stale, state]);
 
   const live = briefFor(state);
   const livePlanner =
@@ -248,8 +243,8 @@ export default function ConsolePanel() {
       ? plannerBrief(lines, movePickOf(live))
       : null;
   const liveDeeper =
-    !deep.searching && !deep.stale && deep.lines.length && livePlanner
-      ? plannerBrief(deep.lines, livePlanner.label)
+    !proof.searching && !proof.stale && proof.lines.length && livePlanner
+      ? plannerBrief(proof.lines, livePlanner.label)
       : null;
 
   return (

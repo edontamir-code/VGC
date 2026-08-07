@@ -128,6 +128,45 @@ function oppConfirmed(state: BattleState): boolean {
   return activeMons(state, "opp").every((m) => m.revealed.sp && scout(m).fullyScouted);
 }
 
+/**
+ * A plan whose value lives in the REPLY rather than in the turn itself.
+ *
+ * Both beams in this file rank my candidate plans by their value with no reply
+ * from the opponent. That ordering is fine for comparing attacks and
+ * structurally blind to defence: a Protect deals no damage so it sorts near the
+ * bottom, and a pivot looks like a wasted turn. Whenever a beam is applied,
+ * these get a reserved quota so the ordering heuristic cannot delete them.
+ */
+function isDefensive(plan: Plan): boolean {
+  return Object.values(plan).some(
+    (a) => a.kind === "switch" || isProtect(a.moveName ?? "")
+  );
+}
+
+/**
+ * Take the top `width` by score, then top up with defensive plans.
+ *
+ * Returns candidates in no particular order; every one is scored properly by
+ * the caller. This only decides who gets to BE scored.
+ */
+function beamWithDefence<T extends { plan: Plan }>(
+  ranked: T[],
+  width: number,
+  quota: number
+): T[] {
+  const picked = ranked.slice(0, width);
+  const seen = new Set(picked);
+  let added = 0;
+  for (const cand of ranked) {
+    if (added >= quota) break;
+    if (seen.has(cand) || !isDefensive(cand.plan)) continue;
+    picked.push(cand);
+    seen.add(cand);
+    added++;
+  }
+  return picked;
+}
+
 /** A specific unknown move that turns a pin into a non-pin. */
 export interface PinBreaker {
   monUid: string;
@@ -252,8 +291,18 @@ function bestLineValue(
   let exhaustive = true;
   // Progressive narrowing: the deeper we are, the tighter the beam. Deep plies
   // move the top-level answer least and cost the most, so they shrink fastest.
+  //
+  // This is a MAX node, and that is what made the beam dangerous. It returns
+  // the best of whatever it looked at, so a beam that excludes good plans
+  // UNDERSTATES the branch - and it understates each branch by a different
+  // amount, depending on what happened to land in the beam. Ranking by
+  // no-reply value put attacks in and defence out, so a continuation that left
+  // a big attacker on the field scored high while one that needed a Protect
+  // scored low. Top-level rankings inverted as a result: the search preferred
+  // switching a Ground-immune Pokemon out for a Ground-weak one because the
+  // resulting board's beam looked better, not because the line was better.
   const beam = Math.max(2, opts.myBeam - 2 * (opts.depth - depth));
-  for (const cand of quick.slice(0, beam)) {
+  for (const cand of beamWithDefence(quick, beam, Math.max(2, Math.floor(beam / 2)))) {
     const w = worstCaseValue(state, cand.plan, depth, opts, duties, undefined, best);
     if (!w.exhaustive) exhaustive = false;
     if (w.score > best) best = w.score;
@@ -312,22 +361,8 @@ export function searchPlans(
   });
   quick.sort((a, b) => b.immediate - a.immediate);
 
-  const isDefensive = (plan: Plan) =>
-    Object.values(plan).some((a) => a.kind === "switch" || isProtect(a.moveName ?? ""));
-
   const width = Math.max(opts.myBeam * 3, 24);
-  const picked = quick.slice(0, width);
-  const seen = new Set(picked);
-  const defensiveQuota = Math.max(6, Math.floor(width / 3));
-  let added = 0;
-  for (const cand of quick) {
-    if (added >= defensiveQuota) break;
-    if (seen.has(cand) || !isDefensive(cand.plan)) continue;
-    picked.push(cand);
-    seen.add(cand);
-    added++;
-  }
-  const shortlist = picked;
+  const shortlist = beamWithDefence(quick, width, Math.max(6, Math.floor(width / 3)));
 
   const lines: PlanLine[] = shortlist.map(({ plan }) => {
     const worst = worstCaseValue(state, plan, opts.depth, opts, duties);
