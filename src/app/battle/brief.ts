@@ -20,7 +20,7 @@ import { rankedLinesWithRisk } from "./leadRisk.ts";
 import { bestBoardPlay } from "./spread.ts";
 import { budgetRead } from "./damageInference.ts";
 import { resourceWarnings, unansweredThreats } from "./resources.ts";
-import { doubleProtect, fakeOutCalls } from "./protect.ts";
+import { doubleProtect, fakeOutReads } from "./protect.ts";
 import { moveProbability } from "./inference.ts";
 import type { PlanLine } from "../search/plan.ts";
 import { activeMons } from "./resolver.ts";
@@ -143,7 +143,7 @@ function protectLines(state: BattleState): string[] {
   const out: string[] = [];
   const dp = doubleProtect(state);
   if (dp.text) out.push(dp.text);
-  for (const call of fakeOutCalls(state, moveProbability)) out.push(call.text);
+  for (const call of fakeOutReads(state, moveProbability)) out.push(call.text);
   return out;
 }
 

@@ -27,6 +27,12 @@
 // ===========================================================================
 import type { BattleState, MonState } from "../model/types.ts";
 import { isProtect } from "../sim/actions.ts";
+import { rankedLines } from "./resolver.ts";
+import type { Line } from "./resolver.ts";
+import { simulateTurn } from "../sim/turn.ts";
+import type { Plan } from "../sim/actions.ts";
+import { evaluate } from "../search/evaluate.ts";
+import { blockedBySidePriorityGuard } from "./terrain.ts";
 import { scout } from "./scouting.ts";
 import { activeProfile } from "./stats.ts";
 
@@ -128,72 +134,165 @@ export function doubleProtect(state: BattleState): DoubleProtectRead {
 // Calling the Fake Out
 // ---------------------------------------------------------------------------
 
-export interface FakeOutCall {
+
+export interface FakeOutBranch {
+  /** Which of mine gets flinched in this branch. */
+  target: MonState;
+  /** What that Pokemon would have done with the turn. */
+  deniedMove: string | null;
+  /** Plain words for what the flinch costs. */
+  cost: string;
+  /** Position value for me after this branch, from the real simulator. */
+  score: number;
+  /** Can that Pokemon Protect through it, and how reliably? 0 = no Protect. */
+  protectChance: number;
+}
+
+export interface FakeOutRead {
   /** Their Pokemon that can Fake Out. */
   by: MonState;
   /** 0-1 that it holds Fake Out at all. */
   probability: number;
-  /** The one of mine it most wants to flinch. */
-  likelyTarget: MonState | null;
-  /** True when that target can Protect through it for free. */
-  targetCanProtect: boolean;
+  /** One per Pokemon of mine it could hit, WORST FOR ME FIRST. Empty if blocked. */
+  branches: FakeOutBranch[];
+  /** The branch they should pick if they are playing well. */
+  theirBest: FakeOutBranch | null;
+  /**
+   * True when the branches are close enough that the call is a guess. Worth
+   * saying: it turns "Protect this one" into "pick one and accept the other".
+   */
+  closeCall: boolean;
+  /**
+   * The ability stopping it side-wide, if any. Armor Tail, Queenly Majesty and
+   * Dazzling all blank the whole priority bracket for their side - so there is
+   * no Fake Out to call, and no Protect worth spending on one.
+   */
+  blockedBy: { ability: string; holder: MonState } | null;
   text: string;
 }
 
+/** Below this gap the two branches are effectively the same to them. */
+const CLOSE_CALL_MARGIN = 150;
+
 /**
- * "If I think he is going to Fake Out, Protect the one he wants to hit."
+ * "Either he Fake Outs that one and goes on, or he Fake Outs the other one."
  *
- * Fake Out is spent on whatever most needs stopping - the Pokemon that would
- * otherwise set your speed control or land the KO - so the likely target is the
- * one whose turn is worth the most. Protect on that Pokemon costs nothing when
- * its counter is fresh: it blocks the flinch, and if they guessed differently
- * you have still lost only a turn you were going to spend guessing anyway.
+ * Those are two concretely different game states and both matter. The old model
+ * picked ONE likely target from a heuristic - your speed control, else whoever
+ * happened to be in slot one - which is not how the decision works. What
+ * decides it is what stopping each of your Pokemon is worth to THEM: if your
+ * Raichu would otherwise one-shot their Trick Room setter, flinching Raichu is
+ * the right call even though the setter on YOUR side looks like the obvious
+ * target.
+ *
+ * So both branches are simulated and scored, and both are reported. The one
+ * that hurts most is the one to expect - and when they are close, the honest
+ * answer is that it is a guess, which is different advice entirely.
  */
-export function fakeOutCalls(
+export function fakeOutReads(
   state: BattleState,
   moveProbability: (mon: MonState, move: string) => number
-): FakeOutCall[] {
+): FakeOutRead[] {
   const foes = (state.sides.opp.active.filter(Boolean) as string[])
     .map((u) => state.mons[u])
     .filter((m): m is MonState => Boolean(m) && !m.fainted);
   const mine = (state.sides.me.active.filter(Boolean) as string[])
     .map((u) => state.mons[u])
     .filter((m): m is MonState => Boolean(m) && !m.fainted);
+  if (mine.length === 0) return [];
 
-  const out: FakeOutCall[] = [];
+  // What each of mine would do with the turn if left alone. That is exactly
+  // what the flinch takes away, so it is what the branch costs.
+  const best = new Map<string, Line>();
+  for (const line of rankedLines(state, "me")) {
+    if (!best.has(line.attackerUid)) best.set(line.attackerUid, line);
+  }
+  const myPlan: Plan = {};
+  for (const m of mine) {
+    const l = best.get(m.uid);
+    if (!l) continue;
+    myPlan[m.uid] = l.spread
+      ? { kind: "move", moveName: l.moveName }
+      : { kind: "move", moveName: l.moveName, targetUid: l.targets[0]?.uid };
+  }
+
+  // Armor Tail and friends blank the whole priority bracket for my side, so
+  // there is no Fake Out to call and no Protect worth spending on one. Checked
+  // BEFORE the branches: without this the tool cheerfully reports two live
+  // targets and a coinflip for a move that cannot land at all.
+  const guard = blockedBySidePriorityGuard(state, "opp", "me", 3);
+
+  const out: FakeOutRead[] = [];
   for (const foe of foes) {
     // Fake Out only works on the turn a Pokemon arrives.
     if (foe.turnsOnField > 0) continue;
     const p = moveProbability(foe, "Fake Out");
     if (p < 0.25) continue;
 
-    // Whoever's turn is worth stopping: the speed-control setter first, then
-    // the faster attacker.
-    const setter = mine.find((m) =>
-      scout(m).arsenal.some((x) => x === "Trick Room" || x === "Tailwind")
-    );
-    const likelyTarget = setter ?? mine[0] ?? null;
-    const read = likelyTarget ? protectRead(likelyTarget) : null;
-    const canProtect = Boolean(read?.hasProtect && read.guaranteed);
+    if (guard) {
+      out.push({
+        by: foe,
+        probability: p,
+        branches: [],
+        theirBest: null,
+        closeCall: false,
+        blockedBy: guard,
+        text:
+          `${nameOf(foe)} is ${Math.round(p * 100)}% to have Fake Out, but ${nameOf(guard.holder)}'s ` +
+          `${guard.ability} blocks the whole priority bracket for your side - it cannot land on ` +
+          `either of you. Do not spend a Protect on it.`,
+      });
+      continue;
+    }
 
-    out.push({
-      by: foe,
-      probability: p,
-      likelyTarget,
-      targetCanProtect: canProtect,
-      text:
-        `${nameOf(foe)} is ${Math.round(p * 100)}% to Fake Out` +
-        (likelyTarget
-          ? `, and ${nameOf(likelyTarget)} is what it most wants to stop` +
-            (setter ? ` - it is your speed control` : "")
-          : "") +
-        (canProtect && likelyTarget
-          ? `. ${nameOf(likelyTarget)}'s Protect is guaranteed this turn, so calling the Fake Out ` +
-            `costs you nothing if you are right and one turn if you are wrong.`
-          : likelyTarget
-            ? `. It cannot Protect through it${read && !read.guaranteed ? " reliably - it already protected" : ""}.`
-            : "."),
+    const branches: FakeOutBranch[] = mine.map((target) => {
+      const sim = simulateTurn(
+        state,
+        { ...myPlan, [foe.uid]: { kind: "move", moveName: "Fake Out", targetUid: target.uid } },
+        { roll: "worstForMe", tie: "them" }
+      );
+      const line = best.get(target.uid) ?? null;
+      const kills = line?.targets.filter((t) => t.result.verdict === "DEAD") ?? [];
+      const pr = protectRead(target);
+
+      return {
+        target,
+        deniedMove: line?.moveName ?? null,
+        cost: !line
+          ? `${nameOf(target)} had nothing queued`
+          : kills.length > 0
+            ? `${nameOf(target)} loses the KO on ${kills.map((k) => nameOf(k.target)).join(" and ")}`
+            : `${nameOf(target)} loses its ${line.moveName}`,
+        score: evaluate(sim.state),
+        protectChance: pr.hasProtect ? pr.chance : 0,
+      };
     });
+
+    // Worst for me first - that is the branch they should choose.
+    branches.sort((a, b) => a.score - b.score);
+    const theirBest = branches[0] ?? null;
+    const gap =
+      branches.length > 1 ? Math.abs(branches[0].score - branches[1].score) : Infinity;
+    const closeCall = branches.length > 1 && gap < CLOSE_CALL_MARGIN;
+
+    const protectWord = (c: number) =>
+      c >= 1 ? "Protect blanks it" : c > 0 ? `Protect only ${Math.round(c * 100)}%` : "no Protect";
+
+    let text = `${nameOf(foe)} is ${Math.round(p * 100)}% to Fake Out, and both of yours are live targets. `;
+    text += branches
+      .map((b) => `Into ${nameOf(b.target)}: ${b.cost} (${protectWord(b.protectChance)})`)
+      .join(". ");
+    text += closeCall
+      ? `. The two branches are close, so which one they pick is a guess - take the Protect you ` +
+        `can afford and accept the other line.`
+      : theirBest
+        ? `. ${nameOf(theirBest.target)} costs you most, so expect it there` +
+          (theirBest.protectChance >= 1
+            ? ` - and its Protect is guaranteed, so calling it costs nothing if you are right.`
+            : `.`)
+        : `.`;
+
+    out.push({ by: foe, probability: p, branches, theirBest, closeCall, blockedBy: null, text });
   }
   return out.sort((a, b) => b.probability - a.probability);
 }

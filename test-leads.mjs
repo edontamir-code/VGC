@@ -7,6 +7,8 @@ import { newBattleState, monFromThreatId } from "./src/app/model/factory.ts";
 import { reduce } from "./src/app/state/reducer.ts";
 import { openingRead, readLeads, speedRaces, PLAN_CUTOFF } from "./src/app/battle/leads.ts";
 import { activeProfile } from "./src/app/battle/stats.ts";
+import { fakeOutReads } from "./src/app/battle/protect.ts";
+import { moveProbability } from "./src/app/battle/inference.ts";
 
 let ok = 0, total = 0;
 const check = (pass, label) => {
@@ -162,6 +164,96 @@ console.log("\n-- every plan comes with what beats it --");
   const tr = all.find((p) => p.kind === "trickRoom");
   check(/-7 priority/.test(tr.counter),
     "the Trick Room counter explains WHY denial works (it is -7 priority)");
+}
+
+// ===========================================================================
+// THE FAKE OUT IS TWO BRANCHES, NOT ONE GUESS.
+//
+// "Either he fakes out that one and goes on, or he fakes out the other one."
+// Both are concretely different game states and both matter. What decides which
+// he picks is not a heuristic about YOUR side - it is what stopping each of
+// your Pokemon is worth to HIM. If your Arcanine would otherwise KO the thing
+// in front of it, flinching Arcanine is the call.
+// ===========================================================================
+console.log("\n-- both Fake Out branches are simulated --");
+{
+  let s = board(["incineroar", "whimsicott"], ["Staraptor", "Arcanine"]);
+  const reads = fakeOutReads(s, moveProbability);
+  check(reads.length === 1, `one Fake Out read for their Incineroar (${reads.length})`);
+  const r = reads[0];
+
+  check(r.branches.length === 2,
+    `BOTH of my actives are scored as targets, not one guessed at (${r.branches.length})`);
+  for (const b of r.branches) {
+    console.log(`      into ${nameOf(b.target)}: ${b.cost} | score ${Math.round(b.score)} | ` +
+      `Protect ${Math.round(b.protectChance * 100)}%`);
+  }
+
+  // Worst-for-me first: that is the branch they should take.
+  check(r.branches[0].score <= r.branches[1].score,
+    "branches are ordered worst-for-me first");
+  check(r.theirBest === r.branches[0], "  and that is what it calls their best");
+
+  // The load-bearing claim: it picks on what the flinch COSTS, and a lost KO
+  // is the expensive kind of cost.
+  const losesKO = r.branches.find((b) => /loses the KO/.test(b.cost));
+  if (losesKO) {
+    check(r.theirBest === losesKO,
+      `the branch that costs a KO is the one to expect (${nameOf(losesKO.target)})`);
+    check(losesKO.score < r.branches[1].score,
+      "  and it genuinely scores worse for me, from the simulator");
+  }
+  console.log("      READ:", r.text);
+  check(/costs you most|is a guess/.test(r.text),
+    "the text either names the expected target or admits it is a guess");
+
+  // Every branch reports what it denies, so the cost is inspectable.
+  check(r.branches.every((b) => b.deniedMove !== null || /nothing queued/.test(b.cost)),
+    "each branch names the move the flinch takes away");
+}
+
+// ===========================================================================
+console.log("\n-- a close call is reported as a guess, not a read --");
+{
+  // Two attackers with nothing to choose between them.
+  const s = board(["incineroar", "whimsicott"], ["Raichu", "Sylveon"]);
+  const r = fakeOutReads(s, moveProbability)[0];
+  if (r && r.closeCall) {
+    check(/is a guess/.test(r.text),
+      "when the branches are close it says so rather than inventing a read");
+    check(!/costs you most/.test(r.text),
+      "  and does NOT claim to know which one they will pick");
+  } else {
+    check(r && /costs you most/.test(r.text),
+      "with a clear gap it names the expected target");
+  }
+}
+
+// ===========================================================================
+// Armor Tail blanks it entirely - there is no call to make.
+// ===========================================================================
+console.log("\n-- a Fake Out that cannot land is not a decision --");
+{
+  const s = board(["incineroar", "sinistcha"], ["Farigiraf", "Sylveon"]);
+  const r = fakeOutReads(s, moveProbability)[0];
+  check(r, "their Incineroar still reads as holding Fake Out");
+  console.log("      READ:", r.text);
+
+  check(r.blockedBy, `it is blocked side-wide by ${r.blockedBy?.ability}`);
+  check(r.branches.length === 0,
+    "no branches are offered - there is nothing to choose between");
+  check(/cannot land on either of you/.test(r.text),
+    "  and the text says it cannot land at all");
+  check(/Do not spend a Protect/.test(r.text),
+    "  and tells you not to waste a Protect on it - the whole point");
+  check(!/is a guess/.test(r.text),
+    "  it never calls a blocked Fake Out a coinflip");
+
+  // Without the Armor Tail holder, the same board DOES present a real call.
+  const without = board(["incineroar", "sinistcha"], ["Raichu", "Sylveon"]);
+  const r2 = fakeOutReads(without, moveProbability)[0];
+  check(r2 && !r2.blockedBy && r2.branches.length === 2,
+    "swap Farigiraf out and the Fake Out is a live two-branch decision again");
 }
 
 console.log(`\n${ok}/${total} passed`);
