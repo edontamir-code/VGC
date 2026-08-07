@@ -10,6 +10,7 @@ import { usePlanner } from "../search/usePlanner.ts";
 import { DEFAULT_SEARCH } from "../search/plan.ts";
 import type { SearchOpts } from "../search/plan.ts";
 import { activeMons } from "../battle/resolver.ts";
+import { savedTeamWasStale } from "../state/myTeam.ts";
 
 interface Entry {
   id: number;
@@ -96,6 +97,10 @@ export default function ConsolePanel() {
   const [log, setLog] = useState<Entry[]>([]);
   const nextId = useRef(1);
   const endRef = useRef<HTMLDivElement | null>(null);
+  // Checked once on mount: after the first render the stale copy is gone and
+  // the answer would flip to false.
+  const [staleTeam] = useState(savedTeamWasStale);
+  const [dismissedStale, setDismissedStale] = useState(false);
 
   const phase = phaseOf(state);
   // Preview what the current input would do, so a misread is visible BEFORE
@@ -192,6 +197,21 @@ export default function ConsolePanel() {
         {PHASE_LABEL[phase]}
         <span className="count">one box - their six, the leads, then every turn</span>
       </div>
+
+      {staleTeam && !dismissedStale && (
+        <div className="con-urgent" style={{ marginBottom: 10 }}>
+          Your saved team was from an older version of the app and has been replaced with
+          the current one. If you had edited it in the My team tab, those edits are gone -
+          check that tab before you play.
+          <button
+            className="btn xs"
+            style={{ marginLeft: 8 }}
+            onClick={() => setDismissedStale(true)}
+          >
+            Got it
+          </button>
+        </div>
+      )}
 
       {log.length > 0 && (
         <div className="con-log">

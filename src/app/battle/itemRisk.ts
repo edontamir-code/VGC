@@ -182,23 +182,3 @@ export function itemSensitivity(
   };
 }
 
-/**
- * The scariest item-conditional outcome across a whole arsenal.
- *
- * Used for "what can this thing do to me if the item goes the wrong way" -
- * scans every move it could have and returns the swings worth showing, biggest
- * threat first.
- */
-export function itemSwings(
-  attacker: MonState,
-  defender: MonState,
-  moves: string[],
-  state: BattleState
-): ItemSensitivity[] {
-  const out: ItemSensitivity[] = [];
-  for (const m of moves) {
-    const s = itemSensitivity(attacker, defender, m, state);
-    if (s && s.text) out.push(s);
-  }
-  return out.sort((a, b) => (b.worstOutcome?.maxPct ?? 0) - (a.worstOutcome?.maxPct ?? 0));
-}

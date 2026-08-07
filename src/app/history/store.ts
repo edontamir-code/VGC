@@ -43,10 +43,6 @@ export function allGames(): GameRecord[] {
   return read();
 }
 
-export function getGame(id: string): GameRecord | null {
-  return read().find((g) => g.id === id) ?? null;
-}
-
 /** The game currently being recorded, if any. */
 export function currentGame(): GameRecord | null {
   const games = read();
