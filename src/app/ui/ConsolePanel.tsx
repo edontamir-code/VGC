@@ -22,8 +22,10 @@ interface Entry {
   brief: Brief | null;
   /** The board this reply describes - used to match a late planner result. */
   forState: unknown;
-  /** Filled in when the multi-turn search answers. */
+  /** The exhaustive depth-1 answer - verified, and what to act on. */
   planner: PlannerBrief | null;
+  /** The deeper beamed answer, shown only when it DISAGREES with the proof. */
+  deeper: PlannerBrief | null;
   error: boolean;
 }
 
@@ -63,28 +65,51 @@ function BriefView({ brief }: { brief: Brief }) {
   );
 }
 
-/** The deeper answer, once the worker has one. */
+/**
+ * The verified answer: depth 1, every reply checked, nothing beamed.
+ * This is the line to act on.
+ */
 function PlannerView({ p, searching }: { p: PlannerBrief | null; searching: boolean }) {
   if (!p) {
-    return searching ? (
-      <div className="con-thinking">Looking further ahead...</div>
-    ) : null;
+    return searching ? <div className="con-thinking">Checking every reply...</div> : null;
   }
   return (
     <div className={`con-planner ${p.pinVsPossible ? "proven" : ""}`}>
       <div className="con-headline">
-        {p.headline}
+        {p.label}
         <span className={`pin ${p.pinVsPossible ? "pin-strong" : p.isPin ? "pin-cond" : "pin-none"}`}>
           {p.pinVsPossible ? "GUARANTEED" : p.isPin ? "BEST FLOOR" : "NO PIN"}
         </span>
       </div>
-      {p.disagrees && (
-        <div className="con-urgent">
-          This is NOT what the one-turn read suggested. Looking further ahead changes the
-          answer - the deeper line is the one to trust.
-        </div>
-      )}
       {p.notes.map((n) => (
+        <div key={n} className="assumptions con-note">{n}</div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The deeper search, shown ONLY when it disagrees with the verified one.
+ *
+ * Deliberately framed as a second opinion rather than an upgrade. It looks
+ * three turns ahead but beams both sides' options, so it can miss things the
+ * exhaustive single-turn search cannot - and on at least one real board it
+ * preferred a switch that walks into a spread move the shallow search avoided.
+ */
+function DeeperView({ d }: { d: PlannerBrief | null }) {
+  if (!d) return null;
+  return (
+    <div className="con-planner second">
+      <div className="con-headline">
+        Looking {d.horizon} ahead it prefers: {d.label}
+        <span className="pin pin-none">BEAMED</span>
+      </div>
+      <div className="assumptions con-note">
+        The two searches disagree. The line above was checked against EVERY reply they
+        have; this one looks further but only examines some of them, so it can be
+        confidently wrong. Treat it as a second opinion, not a correction.
+      </div>
+      {d.notes.map((n) => (
         <div key={n} className="assumptions con-note">{n}</div>
       ))}
     </div>
@@ -110,23 +135,39 @@ export default function ConsolePanel() {
     [text, state]
   );
 
-  // The multi-turn search, in a worker, so the console stays responsive and the
-  // answer arrives as an upgrade to a reply that is already on screen.
+  // TWO searches, because they answer different questions and can disagree.
   //
-  // Three turns with NARROW beams, measured rather than guessed. On a busy
-  // board (both sides full, four on each bench) the Plan tab's 6/6 beams take
-  // ~12s; 4/4 returns the same top line in ~3.4s. Dropping to two turns is the
-  // wrong trade - depth 2 misses the resource-preservation switch entirely and
-  // recommends attacking instead, so it is fast and wrong.
+  //   PROOF  - depth 1, every reply checked, nothing beamed. It cannot see a
+  //            two-turn punish, but what it does say is verified.
+  //   DEEPER - depth 3 with narrow beams. Sees further, and BEAMS - so it can
+  //            be wrong in ways the shallow search is not.
+  //
+  // The proof search leads. That is not an aesthetic preference: on a real
+  // board (Raichu + Staraptor into Charizard-Y + Garchomp) the beamed search
+  // ranked "switch Staraptor out for Kingambit" first, which trades a
+  // Ground-IMMUNE Pokemon for one that is 2x weak to the Earthquake that is
+  // coming. The exhaustive depth-1 search ranked that 15th and correctly put
+  // "Raichu Protect + Staraptor attack" on top. Until that is understood, the
+  // verified answer is the one to show first.
   const canSearch =
     activeMons(state, "opp").length > 0 && activeMons(state, "me").length > 0;
-  const opts: SearchOpts = {
+  const proofOpts: SearchOpts = {
+    depth: 1,
+    myBeam: 8,
+    theirBeam: 8,
+    arsenal: DEFAULT_SEARCH.arsenal,
+  };
+  const deepOpts: SearchOpts = {
     depth: 3,
     myBeam: 4,
     theirBeam: 4,
     arsenal: DEFAULT_SEARCH.arsenal,
   };
-  const { lines, searching, stale } = usePlanner(state, opts, canSearch);
+  const proof = usePlanner(state, proofOpts, canSearch);
+  const deep = usePlanner(state, deepOpts, canSearch);
+  const lines = proof.lines;
+  const searching = proof.searching;
+  const stale = proof.stale;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
@@ -151,6 +192,7 @@ export default function ConsolePanel() {
         brief: null,
         forState: null,
         planner: null,
+        deeper: null,
         error: result.kind === "error",
       },
     ]);
@@ -185,10 +227,29 @@ export default function ConsolePanel() {
     });
   }, [lines, searching, stale, state]);
 
+  // The deeper answer is only worth screen space when it DISAGREES. When both
+  // searches land on the same line there is nothing to decide and a second box
+  // saying the same thing is noise.
+  useEffect(() => {
+    if (deep.searching || deep.stale || deep.lines.length === 0) return;
+    setLog((l) => {
+      if (l.length === 0) return l;
+      const last = l[l.length - 1];
+      if (last.forState !== state || last.deeper || !last.planner) return l;
+      const d = plannerBrief(deep.lines, last.planner.label);
+      if (!d || !d.disagrees) return l;
+      return [...l.slice(0, -1), { ...last, deeper: d }];
+    });
+  }, [deep.lines, deep.searching, deep.stale, state]);
+
   const live = briefFor(state);
   const livePlanner =
     !searching && !stale && lines.length
       ? plannerBrief(lines, movePickOf(live))
+      : null;
+  const liveDeeper =
+    !deep.searching && !deep.stale && deep.lines.length && livePlanner
+      ? plannerBrief(deep.lines, livePlanner.label)
       : null;
 
   return (
@@ -226,10 +287,13 @@ export default function ConsolePanel() {
               ))}
               {e.brief && <BriefView brief={e.brief} />}
               {e.brief && (
-                <PlannerView
-                  p={e.planner}
-                  searching={searching && e.forState === state}
-                />
+                <>
+                  <PlannerView
+                    p={e.planner}
+                    searching={searching && e.forState === state}
+                  />
+                  <DeeperView d={e.deeper} />
+                </>
               )}
             </div>
           ))}
@@ -240,7 +304,12 @@ export default function ConsolePanel() {
       {log.length === 0 && (
         <>
           <BriefView brief={live} />
-          {canSearch && <PlannerView p={livePlanner} searching={searching} />}
+          {canSearch && (
+            <>
+              <PlannerView p={livePlanner} searching={searching} />
+              <DeeperView d={liveDeeper && liveDeeper.disagrees ? liveDeeper : null} />
+            </>
+          )}
         </>
       )}
 

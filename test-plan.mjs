@@ -14,6 +14,7 @@ import { scout } from "./src/app/battle/scouting.ts";
 import { effectivePriority } from "./src/app/battle/moves.ts";
 import { isGrounded } from "./src/app/battle/terrain.ts";
 import { protectSuccessChance } from "./src/app/battle/protect.ts";
+import { activeProfile } from "./src/app/battle/stats.ts";
 import { resolveMatchup, clearMatchupCache } from "./src/app/battle/damage.ts";
 
 let ok = 0, total = 0;
@@ -677,5 +678,90 @@ console.log("\n-- a recharge move costs the following turn --");
     "a non-recharge move leaves the user free next turn");
 }
 
-console.log(`\n${ok}/${total} passed`);
+
+// ===========================================================================
+// THE BOARD THAT CAUGHT IT: Raichu + Staraptor into Charizard-Y + Garchomp.
+//
+// The beamed multi-turn search ranked "switch Staraptor out for Kingambit"
+// first. Staraptor is Normal/Flying and IMMUNE to Ground; Kingambit is
+// Dark/Steel and 2x weak to it. Garchomp's Earthquake is the obvious punish, so
+// that line volunteers the one Pokemon that could not be hit and replaces it
+// with the one that is hit hardest.
+//
+// Two separate defects were behind it, and this pins both.
+// ===========================================================================
+console.log("\n-- the Earthquake board --");
+{
+  let s = newBattleState();
+  for (const id of ["charizard-y", "garchomp"]) {
+    s = reduce(s, { type: "ADD_MON", side: "opp", mon: monFromThreatId(id) });
+  }
+  const my = (n) => Object.values(s.mons).find((m) => m.side === "me" && m.set.speciesId === n);
+  const their = (id) => Object.values(s.mons).find((m) => m.side === "opp" && m.set.speciesId === id);
+  s = reduce(s, { type: "SWITCH_IN", side: "me", slot: 0, uid: my("Raichu").uid });
+  s = reduce(s, { type: "SWITCH_IN", side: "me", slot: 1, uid: my("Staraptor").uid });
+  const raichu = my("Raichu"), star = my("Staraptor"), gambit = my("Kingambit");
+  const zard = their("charizard-y"), chomp = their("garchomp");
+
+  // The type facts the advice has to respect.
+  const starTypes = activeProfile(s.mons[star.uid]).types;
+  const gambitTypes = activeProfile(s.mons[gambit.uid]).types;
+  check(starTypes.includes("Flying"), `Staraptor is ${starTypes.join("/")} - immune to Ground`);
+  check(gambitTypes.includes("Steel"), `Kingambit is ${gambitTypes.join("/")} - 2x weak to Ground`);
+
+  const eqStar = resolveMatchup(s.mons[chomp.uid], s.mons[star.uid], "Earthquake", s);
+  const eqGambit = resolveMatchup(s.mons[chomp.uid], s.mons[gambit.uid], "Earthquake", s);
+  check(eqStar.typeMult === 0, "Earthquake cannot touch Staraptor at all");
+  check(eqGambit.typeMult === 2, `Earthquake is x${eqGambit.typeMult} on Kingambit`);
+
+  // DEFECT 1: defensive plans were cut from the shortlist before their worst
+  // case was ever computed, because the pre-pass ranks by immediate damage.
+  const lines = searchPlans(s, { depth: 1, myBeam: 8, theirBeam: 8, arsenal: "possible" });
+  const protectLines = lines.filter((l) => /Protect/.test(l.label));
+  check(protectLines.length > 0,
+    `${protectLines.length} Protect lines are evaluated, not cut by the pre-pass`);
+
+  // DEFECT 2: the exhaustive search must not prefer walking into the Earthquake.
+  const swapRank = lines.findIndex((l) => /switch to Kingambit/.test(l.label));
+  console.log(`      top line: ${lines[0].label}`);
+  console.log(`      switch-into-Kingambit ranks ${swapRank + 1} of ${lines.length}`);
+  check(swapRank !== 0,
+    "the exhaustive search does NOT rank switching the Ground-immune Pokemon out first");
+  check(lines[0].worst.exhaustive,
+    "and depth 1 checked every reply, so that ranking is verified rather than beamed");
+
+  // The punish itself has to be found and reported, whichever line is on top.
+  const swap = lines[swapRank];
+  check(/Earthquake/.test(swap.worst.replyLabel),
+    `the switch line's worst case names the Earthquake: "${swap.worst.replyLabel}"`);
+
+  // And staying is genuinely better against that exact punish - same Pokemon
+  // alive, more HP - which is what makes the old ranking wrong.
+  const punish = {
+    [zard.uid]: { kind: "move", moveName: "Protect" },
+    [chomp.uid]: { kind: "move", moveName: "Earthquake" },
+  };
+  const zapAt = { kind: "move", moveName: "Zap Cannon", targetUid: zard.uid };
+  const staying = simulateTurn(s, {
+    [raichu.uid]: zapAt,
+    [star.uid]: { kind: "move", moveName: "Dual Wingbeat", targetUid: chomp.uid },
+    ...punish,
+  }, WORST);
+  const switching = simulateTurn(s, {
+    [raichu.uid]: zapAt,
+    [star.uid]: { kind: "switch", toUid: gambit.uid },
+    ...punish,
+  }, WORST);
+  const hp = (st) => Object.values(st.mons)
+    .filter((m) => m.side === "me" && !m.fainted)
+    .reduce((n, m) => n + (100 * m.curHP) / m.maxHP, 0);
+  console.log(`      staying leaves ${Math.round(hp(staying.state))}% of HP, switching ${Math.round(hp(switching.state))}%`);
+  check(hp(staying.state) > hp(switching.state),
+    "against that exact punish, staying keeps strictly more of my side alive");
+  check(evaluate(staying.state) > evaluate(switching.state),
+    `and scores better (${Math.round(evaluate(staying.state))} vs ${Math.round(evaluate(switching.state))})`);
+}
+
+console.log(`
+${ok}/${total} passed`);
 process.exit(ok === total ? 0 : 1);

@@ -17,7 +17,7 @@
 // claim about the whole game - the horizon is always reported alongside it.
 // ===========================================================================
 import type { BattleState, SideId } from "../model/types.ts";
-import { actionProfiles, actionLabel } from "../sim/actions.ts";
+import { actionProfiles, actionLabel, isProtect } from "../sim/actions.ts";
 import type { Plan } from "../sim/actions.ts";
 import { simulateTurn } from "../sim/turn.ts";
 import type { SimEvent } from "../sim/turn.ts";
@@ -294,12 +294,40 @@ export function searchPlans(
   const possibleArsenals = oppArsenals(state, "possible");
 
   // Cheap pre-pass so the expensive search only runs on plausible plans.
+  //
+  // The pre-pass scores a plan with NO reply from them, which is fine for
+  // ranking attacks against each other and structurally blind to defence: a
+  // Protect does no damage, so it scores near the bottom, and a pivot into a
+  // resist looks like a wasted turn. On a real board that cut 110 plans to 24
+  // and threw away every Protect line before its worst case was ever computed -
+  // which is exactly the set of plans whose whole value lives in the reply.
+  //
+  // So the shortlist is taken in two parts: the best by immediate value, plus a
+  // reserved quota of DEFENSIVE plans (anything containing a Protect or a
+  // switch). Those still have to earn their place in the real worst-case
+  // search; they just get to be in it.
   const quick = mine.map((plan) => {
     const sim = simulateTurn(state, plan, { roll: "worstForMe", tie: "them" });
     return { plan, immediate: evaluate(sim.state, DEFAULT_WEIGHTS, duties) };
   });
   quick.sort((a, b) => b.immediate - a.immediate);
-  const shortlist = quick.slice(0, Math.max(opts.myBeam * 3, 24));
+
+  const isDefensive = (plan: Plan) =>
+    Object.values(plan).some((a) => a.kind === "switch" || isProtect(a.moveName ?? ""));
+
+  const width = Math.max(opts.myBeam * 3, 24);
+  const picked = quick.slice(0, width);
+  const seen = new Set(picked);
+  const defensiveQuota = Math.max(6, Math.floor(width / 3));
+  let added = 0;
+  for (const cand of quick) {
+    if (added >= defensiveQuota) break;
+    if (seen.has(cand) || !isDefensive(cand.plan)) continue;
+    picked.push(cand);
+    seen.add(cand);
+    added++;
+  }
+  const shortlist = picked;
 
   const lines: PlanLine[] = shortlist.map(({ plan }) => {
     const worst = worstCaseValue(state, plan, opts.depth, opts, duties);
