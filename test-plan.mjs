@@ -606,11 +606,19 @@ console.log("\n-- depth 3 performance --");
 
   clearMatchupCache();
   const t0 = Date.now();
-  const d3 = searchPlans(s, { depth: 3, myBeam: 6, theirBeam: 6, arsenal: "possible" });
+  const d3 = searchPlans(s, { depth: 3, myBeam: 4, theirBeam: 4, arsenal: "possible" });
   const ms = Date.now() - t0;
   console.log(`      depth 3: ${d3.length} plans in ${ms}ms`);
   check(d3.length > 0, "depth 3 returns plans");
-  check(ms < 15000, `depth 3 completes in usable time (${ms}ms)`);
+  // 4/4 beams, which is what BOTH the console and the Plan tab now ship at.
+  // Measured: 6/6 takes ~19s on this board and returns the same top line, so
+  // the wider beam was buying latency and nothing else.
+  //
+  // The budget is not tight. Defensive plans get a reserved slot in every beam
+  // now, which costs real time and buys a real fix - without it the search
+  // ranked "switch your Ground-immune Pokemon out for a Ground-weak one" first,
+  // because Protect and pivots were deleted before they were ever scored.
+  check(ms < 12000, `depth 3 completes in usable time (${ms}ms, 4/4 beams)`);
   check(d3.every((l) => l.horizon === 3), "every line reports horizon 3");
 
   const top = d3[0];

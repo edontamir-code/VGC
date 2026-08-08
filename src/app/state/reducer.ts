@@ -12,6 +12,7 @@ import type {
 import { activeProfile } from "../battle/stats.ts";
 import { simulateTurn } from "../sim/turn.ts";
 import { damageContradiction, narrowFromDamage } from "../battle/damageInference.ts";
+import { applyIntimidate } from "../battle/stages.ts";
 import { getMoveData } from "../battle/moves.ts";
 // Aliased: this file's own `Action` is the reducer action union.
 import type { Action as SimAction, Plan } from "../sim/actions.ts";
@@ -278,6 +279,20 @@ export function reduce(state: BattleState, action: Action): BattleState {
       const incoming = next.mons[action.uid];
       next = log(next, `${incoming?.set.name ?? "?"} switched in.`, "action");
       next = incoming ? applyEntryWeather(next, incoming) : next;
+
+      // Intimidate fires the moment a Pokemon lands - including when you set
+      // the leads, which is the case that was being missed. You enter their
+      // leads first, so their Incineroar arrives to an empty field and
+      // intimidates nobody; then your Kingambit arrives and, without resolving
+      // the INCOMING direction too, never gets intimidated at all. The tool
+      // would silently miss that Kingambit is already at +1 Attack from
+      // Defiant before either side has moved.
+      {
+        const r = applyIntimidate(next, action.uid);
+        next = r.state;
+        for (const text of r.events) next = log(next, text, "action");
+      }
+
       // Coming in proves it was brought, which may rule out the rest.
       return reconcile(next, action.side);
     }

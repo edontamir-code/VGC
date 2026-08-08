@@ -17,6 +17,8 @@ import { speedMonOf, speedFieldOf } from "../battle/speed.ts";
 import { effectiveSpeed } from "../../speed.js";
 import { activeMons } from "../battle/resolver.ts";
 import { protectSuccessChance } from "../battle/protect.ts";
+import { applyIntimidate, applyStages } from "../battle/stages.ts";
+import type { StageDelta } from "../battle/stages.ts";
 import { isProtect } from "./actions.ts";
 import type { Action, Plan } from "./actions.ts";
 import { effectivePriority, resolveMoveType } from "../battle/moves.ts";
@@ -216,6 +218,17 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
   let s = state;
 
   // --- 1. switches ---------------------------------------------------------
+  //
+  // Intimidate fires as the Pokemon lands, BEFORE anything moves, so the
+  // Attack drop is already in place for every calc this turn. That is most of
+  // why an Intimidate lead is good - and why leading it into a Defiant
+  // Kingambit hands them +2 Attack instead.
+  const intimidateOnEntry = (st: BattleState, uid: string): BattleState => {
+    const r = applyIntimidate(st, uid);
+    for (const text of r.events) events.push({ actorUid: uid, text });
+    return r.state;
+  };
+
   for (const [uid, action] of Object.entries(plan)) {
     // A caller can hand us a hole - a parsed turn line it could not resolve.
     // Better to play the rest of the turn than to throw the whole thing away.
@@ -223,6 +236,7 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
     if (!s.mons[uid] || s.mons[uid].fainted) continue;
     events.push({ actorUid: uid, text: `${nameOf(s.mons[uid])} switches to ${nameOf(s.mons[action.toUid])}` });
     s = doSwitch(s, uid, action.toUid);
+    s = intimidateOnEntry(s, action.toUid);
   }
 
   // Movers are whoever is now active with a move queued. A mon that switched
@@ -262,6 +276,8 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
   });
 
   // --- 3. execute ----------------------------------------------------------
+  // Partners whose attack is boosted x1.5 by a Helping Hand this turn.
+  const helped = new Set<string>();
   const protectedUids = new Set<string>();
   const flinched = new Set<string>();
   /** Side -> the mon currently pulling single-target attacks onto itself. */
@@ -397,6 +413,48 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
         continue;
       }
 
+      // Setup: Swords Dance, Nasty Plot, Dragon Dance, Bulk Up, Calm Mind.
+      //
+      // These were invisible, so the search could never recommend one: a free
+      // Swords Dance scored exactly zero and any attack beat it. But +2 Attack
+      // on a turn they cannot punish is often the whole game - every later
+      // attack becomes a KO, and no damage number THIS turn competes with that.
+      // The search can now weigh that trade for itself.
+      if (info?.selfStages) {
+        const out = applyStages(s.mons[uid], info.selfStages, false);
+        s = put(s, out.mon);
+        events.push({
+          actorUid: uid,
+          text: out.text
+            ? `${nameOf(actor)} ${moveName}: ${out.text.replace(`${nameOf(actor)} `, "")}`
+            : `${nameOf(actor)} ${moveName} had no effect - already maxed`,
+        });
+        continue;
+      }
+
+      // Helping Hand: the partner's attack this turn is x1.5.
+      //
+      // It sits at +5 priority so it essentially always lands first, which is
+      // what makes it real: Farigiraf boosting a Sylveon Hyper Voice is often
+      // more damage than Farigiraf attacking could ever be. The simulator used
+      // to print "effect not simulated" and move on, so no evaluation could
+      // ever see it and the tool never recommended it.
+      if (moveName === "Helping Hand") {
+        const ally = s.sides[actor.side].active.find(
+          (u) => u && u !== uid && s.mons[u] && !s.mons[u].fainted
+        );
+        if (!ally) {
+          events.push({ actorUid: uid, text: `${moveName} failed - no partner to help` });
+          continue;
+        }
+        helped.add(ally);
+        events.push({
+          actorUid: uid,
+          text: `${nameOf(actor)} Helping Hand - ${nameOf(s.mons[ally])}'s attack is x1.5 this turn`,
+        });
+        continue;
+      }
+
       // Rage Powder / Follow Me: from now on this turn, single-target attacks
       // aimed at this mon's side come to it instead.
       if (info?.redirects) {
@@ -448,6 +506,11 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
     }
 
     const movePriority = effectivePriority(moveName, s.mons[uid]);
+    // Self stat changes only happen if the move actually connected. A Close
+    // Combat that was Protected, redirected into a Ghost or blocked by Armor
+    // Tail does not drop your defences - and, for a Contrary user, does not
+    // raise them either.
+    let landedOnSomething = false;
 
     for (const target of targets) {
       // Armor Tail and friends: nothing with priority reaches their side at all.
@@ -473,7 +536,9 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
         events.push({ actorUid: uid, text: `${nameOf(target)} blocked ${moveName}` });
         continue;
       }
-      const r = resolveMatchup(s.mons[uid], s.mons[target.uid], moveName, s);
+      const r = resolveMatchup(s.mons[uid], s.mons[target.uid], moveName, s, {
+        helpingHand: helped.has(uid),
+      });
       if (!r || r.typeMult === 0) {
         events.push({ actorUid: uid, text: `${moveName} had no effect on ${nameOf(target)}` });
         continue;
@@ -489,6 +554,7 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
             : mine ? r.max : r.min;
 
       const cur = s.mons[target.uid];
+      landedOnSomething = true;
       const { dealt, sashUsed } = applySash(cur, raw);
       let hit = damage(cur, dealt);
       if (sashUsed) {
@@ -506,15 +572,27 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
       });
 
       if (data.flinch && !hit.fainted) flinched.add(target.uid);
-      if (data.lowersSpe && !hit.fainted) {
-        s = put(s, {
-          ...s.mons[target.uid],
-          stages: {
-            ...s.mons[target.uid].stages,
-            spe: Math.max(-6, s.mons[target.uid].stages.spe - data.lowersSpe),
-          },
-        });
+
+      // Stat changes the move inflicts on whatever it hit. `true` for
+      // fromOpponent, so Clear Body blocks it and Defiant punishes it.
+      const onTarget: StageDelta = { ...(data.targetStages ?? {}) };
+      if (data.lowersSpe) onTarget.spe = (onTarget.spe ?? 0) - data.lowersSpe;
+      if (Object.keys(onTarget).length && !hit.fainted) {
+        const out = applyStages(s.mons[target.uid], onTarget, true);
+        s = put(s, out.mon);
+        if (out.text) events.push({ actorUid: target.uid, text: out.text });
       }
+    }
+
+    // Stat changes the move inflicts on the USER, once, after every target is
+    // resolved. Close Combat drops Def and SpD - and Contrary inverts that, so
+    // a Contrary Staraptor gets BULKIER every time it attacks. `false` for
+    // fromOpponent: this is self-inflicted, so drop-immunity and Defiant do not
+    // apply to it.
+    if (data.selfStages && !s.mons[uid].fainted && landedOnSomething) {
+      const out = applyStages(s.mons[uid], data.selfStages, false);
+      s = put(s, out.mon);
+      if (out.text) events.push({ actorUid: uid, text: out.text });
     }
   }
 

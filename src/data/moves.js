@@ -21,7 +21,8 @@ export const MOVES = {
 
   // Fire
   "Heat Wave":     { type:"Fire",     category:"spec", power:95,  spread:true },
-  "Overheat":      { type:"Fire",     category:"spec", power:130 },
+  "Overheat":      { type:"Fire",     category:"spec", power:130, selfStages:{spa:-2},
+                     note:"Drops the user's SpA by 2 - Contrary turns that into +2" },
   "Flamethrower":  { type:"Fire",     category:"spec", power:90 },
   "Flare Blitz":   { type:"Fire",     category:"phys", power:120, contact:true },
   "Blaze Kick":    { type:"Fire",     category:"phys", power:85,  contact:true },
@@ -33,7 +34,9 @@ export const MOVES = {
   "Dual Wingbeat": { type:"Flying",   category:"phys", power:40,  contact:true, note:"hits twice" },
   "Hurricane":     { type:"Flying",   category:"spec", power:110 },
   // Fighting
-  "Close Combat":  { type:"Fighting", category:"phys", power:120, contact:true },
+  "Close Combat":  { type:"Fighting", category:"phys", power:120, contact:true,
+                     selfStages:{def:-1, spd:-1},
+                     note:"Drops the user's Def and SpD - Contrary RAISES them instead" },
   "Low Kick":      { type:"Fighting", category:"phys", power:60,  contact:true, note:"scales with target weight" },
   // Ground
   "Earthquake":    { type:"Ground",   category:"phys", power:100, spread:true },
@@ -50,7 +53,8 @@ export const MOVES = {
                      note:"50 + 50 per fainted ally on user's side; default here ≈1 fainted" },
   "Shadow Ball":   { type:"Ghost",    category:"spec", power:80 },
   // Dark
-  "Kowtow Cleave": { type:"Dark",     category:"phys", power:85,  contact:true, note:"bypasses accuracy checks" },
+  "Kowtow Cleave": { type:"Dark",     category:"phys", power:85,  contact:true, neverMisses:true,
+                     note:"Bypasses accuracy and evasion entirely" },
   "Sucker Punch":  { type:"Dark",     category:"phys", power:70,  contact:true, priority:1, note:"fails if target isn't attacking" },
   "Knock Off":     { type:"Dark",     category:"phys", power:65,  contact:true, note:"x1.5 (97.5) if target holds a removable item" },
   "Throat Chop":   { type:"Dark",     category:"phys", power:80,  contact:true },
@@ -62,7 +66,8 @@ export const MOVES = {
   "Dire Claw":     { type:"Poison",   category:"phys", power:80,  contact:true },
   "Sludge Bomb":   { type:"Poison",   category:"spec", power:90 },
   // Steel
-  "Make It Rain":  { type:"Steel",    category:"spec", power:120, spread:true, note:"lowers user SpA after use" },
+  "Make It Rain":  { type:"Steel",    category:"spec", power:120, spread:true, selfStages:{spa:-1},
+                     note:"Drops the user's SpA by 1" },
   "Iron Head":     { type:"Steel",    category:"phys", power:80,  contact:true },
   "Flash Cannon":  { type:"Steel",    category:"spec", power:80 },
   "Meteor Mash":   { type:"Steel",    category:"phys", power:90,  contact:true },
@@ -125,7 +130,8 @@ export const MOVES = {
   "Poison Jab":     {type:"Poison",   category:"phys", power:80,  contact:true },
   "Scale Shot":     {type:"Dragon",   category:"phys", power:25,  contact:true,
                      note:"Hits 2-5 times, then +1 Spe / -1 Def" },
-  "Rock Tomb":      {type:"Rock",     category:"phys", power:60,  accuracy:95 },
+  "Rock Tomb":      {type:"Rock",     category:"phys", power:60,  accuracy:95, targetStages:{spe:-1},
+                     note:"Lowers the target's Speed by 1" },
   "Muddy Water":    {type:"Water",    category:"spec", power:90,  spread:true, accuracy:85 },
   "U-turn":         {type:"Bug",      category:"phys", power:70,  contact:true,
                      note:"Switches the user out afterwards" },
@@ -143,7 +149,7 @@ export const MOVES = {
   "Icicle Spear":   {type:"Ice",      category:"phys", power:25, contact:false,
                      note:"Hits 2-5 times" },
   "Gunk Shot":      {type:"Poison",   category:"phys", power:120, accuracy:80, contact:false },
-  "Draco Meteor":   {type:"Dragon",   category:"spec", power:130, accuracy:90,
+  "Draco Meteor":   {type:"Dragon",   category:"spec", power:130, accuracy:90, selfStages:{spa:-2},
                      note:"Drops the user's SpA by 2 afterwards" },
   "Aura Sphere":    {type:"Fighting", category:"spec", power:80 },
   "Snarl":          {type:"Dark",     category:"spec", power:55, spread:true,

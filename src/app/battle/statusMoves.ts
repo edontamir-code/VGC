@@ -16,6 +16,16 @@ export interface StatusMoveInfo {
   /** Targets a foe rather than the user. */
   targetsFoe?: boolean;
   /**
+   * Stat stages this move gives the USER.
+   *
+   * Setup was invisible to the simulator, so the search could never recommend
+   * it: a free Swords Dance scored exactly zero and any attack beat it. But +2
+   * Attack on a turn they cannot punish is often the whole game - it turns
+   * every later attack into a KO and there is no damage number this turn that
+   * competes with that. Contrary inverts these, same as move side effects.
+   */
+  selfStages?: Partial<Record<"atk" | "def" | "spa" | "spd" | "spe", number>>;
+  /**
    * True when the simulator actually carries this out. Anything without it is
    * reported as unsimulated rather than silently treated as a no-op.
    */
@@ -40,11 +50,11 @@ export const STATUS_MOVES: Record<string, StatusMoveInfo> = {
   Roost: { effect: "Recovers 50% HP." },
   Substitute: { effect: "Sets a 25% HP substitute." },
   Charm: { effect: "Lowers the target's Attack by 2." },
-  "Nasty Plot": { effect: "Raises the user's SpA by 2." },
-  "Swords Dance": { effect: "Raises the user's Attack by 2." },
+  "Nasty Plot": { effect: "Raises the user's SpA by 2.", selfStages: { spa: 2 }, simulated: true },
+  "Swords Dance": { effect: "Raises the user's Attack by 2.", selfStages: { atk: 2 }, simulated: true },
   "Helping Hand": { effect: "Boosts the ally's move by 1.5x this turn.", priority: 5 },
   Taunt: { effect: "Blocks the target's status moves for 3 turns.", targetsFoe: true },
-  "Calm Mind": { effect: "Raises the user's SpA and SpD by 1." },
+  "Calm Mind": { effect: "Raises the user's SpA and SpD by 1.", selfStages: { spa: 1, spd: 1 }, simulated: true },
   "Strength Sap": { effect: "Lowers the target's Attack by 1 and heals by that amount.", targetsFoe: true },
   Trick: { effect: "Swaps items with the target.", targetsFoe: true },
   Imprison: { effect: "Blocks the foes from using moves the user also knows." },
@@ -53,7 +63,7 @@ export const STATUS_MOVES: Record<string, StatusMoveInfo> = {
   Tickle: { effect: "Lowers the target's Attack and Defence by 1.", targetsFoe: true },
   "Sunny Day": { effect: "Sets sun for 5 turns." },
   "Rain Dance": { effect: "Sets rain for 5 turns." },
-  "Dragon Dance": { effect: "Raises the user's Attack and Speed by 1." },
+  "Dragon Dance": { effect: "Raises the user's Attack and Speed by 1.", selfStages: { atk: 1, spe: 1 }, simulated: true },
   "Final Gambit": { effect: "The user faints, dealing damage equal to its remaining HP.", targetsFoe: true },
   Coaching: { effect: "Raises the ALLY's Attack and Defence by 1." },
   "Scary Face": { effect: "Lowers the target's Speed by 2.", targetsFoe: true },
@@ -76,7 +86,7 @@ export const STATUS_MOVES: Record<string, StatusMoveInfo> = {
   },
   "Wide Guard": { effect: "Blocks spread moves against the user's side this turn.", priority: 3 },
   "Life Dew": { effect: "Heals the user and its ally by 25%." },
-  "Bulk Up": { effect: "Raises the user's Attack and Defence by 1." },
+  "Bulk Up": { effect: "Raises the user's Attack and Defence by 1.", selfStages: { atk: 1, def: 1 }, simulated: true },
   "Quick Guard": { effect: "Blocks priority moves against the user's side.", priority: 3 },
   "Dire Claw": { effect: "Physical Poison, 80 BP - chance of poison/paralysis/sleep." },
 };

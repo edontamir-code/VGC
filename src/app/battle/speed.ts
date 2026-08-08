@@ -12,9 +12,26 @@ import { effectivePriority } from "./moves.ts";
  * Spe is RAW here - `effectiveSpeed` applies the Spe stage, Scarf, Tailwind,
  * paralysis and weather-speed abilities itself (speed.js:14-27).
  */
+/**
+ * Memoised by MonState identity.
+ *
+ * Building one of these is not free - activeProfile does string work and
+ * rawStats recomputes all six stats - and the search calls it four times per
+ * position evaluation, hundreds of thousands of times per search. Adding an
+ * uncached speed term to the evaluation took depth 3 from 2.6s to 15s.
+ *
+ * Identity is a sound key because every state transition produces NEW mon
+ * objects and never mutates old ones, so a cached entry can never describe a
+ * Pokemon that has since changed.
+ */
+const speedMonCache = new WeakMap<MonState, SpeedMon>();
+
 export function speedMonOf(mon: MonState): SpeedMon {
+  const hit = speedMonCache.get(mon);
+  if (hit) return hit;
+
   const p = activeProfile(mon);
-  return {
+  const built: SpeedMon = {
     spe: rawStats(mon).spe,
     side: mon.side,
     item: mon.itemActive ? mon.set.item : "",
@@ -23,6 +40,8 @@ export function speedMonOf(mon: MonState): SpeedMon {
     stages: { spe: mon.stages.spe },
     unburdened: mon.unburdened,
   };
+  speedMonCache.set(mon, built);
+  return built;
 }
 
 export function speedFieldOf(state: BattleState): SpeedField {

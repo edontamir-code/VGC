@@ -107,8 +107,11 @@ export default function PlanTab() {
 
   const opts: SearchOpts = {
     depth,
-    myBeam: depth > 2 ? 6 : DEFAULT_SEARCH.myBeam,
-    theirBeam: depth > 2 ? 6 : DEFAULT_SEARCH.theirBeam,
+    // Depth 3 narrows the beams rather than widening them. Measured on a busy
+    // board: 6/6 takes ~19s and 4/4 takes ~3s for the SAME top line, so the
+    // wider beam was buying latency and nothing else.
+    myBeam: depth > 2 ? 4 : DEFAULT_SEARCH.myBeam,
+    theirBeam: depth > 2 ? 4 : DEFAULT_SEARCH.theirBeam,
     arsenal: mode,
   };
 

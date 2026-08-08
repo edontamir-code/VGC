@@ -97,8 +97,25 @@ console.log("-- the pivot that dodges a threat --");
   const chomp = mine(s, "Garchomp");
   const zard = opp(s, "charizard-y");
 
+  // Their Incineroar is already out, so Garchomp arrived INTO an Intimidate.
+  // That is not a footnote: it is the difference between a guaranteed KO and a
+  // roll, and the tool used to miss it entirely.
+  check(s.mons[chomp.uid].stages.atk === -1,
+    "Garchomp came in against Incineroar, so it is Intimidated to -1 Atk");
+
   const ko = resolveMatchup(s.mons[chomp.uid], s.mons[zard.uid], "Rock Slide", s);
-  check(ko.verdict === "DEAD", `Rock Slide is a guaranteed KO on Charizard Y (${ko.minPct}% min)`);
+  check(ko.verdict === "ROLL",
+    `Rock Slide is now only a ROLL on Charizard Y (${ko.minPct}-${ko.maxPct}%) - Intimidate took the guarantee away`);
+
+  // Without the Intimidate it WOULD be guaranteed, which is what makes the
+  // ability worth a whole turn of theirs.
+  const unbothered = {
+    ...s,
+    mons: { ...s.mons, [chomp.uid]: { ...s.mons[chomp.uid], stages: { ...s.mons[chomp.uid].stages, atk: 0 } } },
+  };
+  const clean = resolveMatchup(unbothered.mons[chomp.uid], unbothered.mons[zard.uid], "Rock Slide", unbothered);
+  check(clean.verdict === "DEAD",
+    `  at neutral Attack the same Rock Slide IS a guaranteed KO (${clean.minPct}% min)`);
 
   const blind = searchPlans(s, { depth: 1, myBeam: 6, theirBeam: 6, arsenal: "assumed" });
   const blindTop = blind[0];
