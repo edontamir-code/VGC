@@ -9,6 +9,7 @@ import { openingRead, readLeads, speedRaces, PLAN_CUTOFF } from "./src/app/battl
 import { activeProfile } from "./src/app/battle/stats.ts";
 import { fakeOutReads } from "./src/app/battle/protect.ts";
 import { moveProbability } from "./src/app/battle/inference.ts";
+import { scoreLeadPair, suggestLeads, physicalShare } from "./src/app/battle/leadScore.ts";
 
 let ok = 0, total = 0;
 const check = (pass, label) => {
@@ -254,6 +255,98 @@ console.log("\n-- a Fake Out that cannot land is not a decision --");
   const r2 = fakeOutReads(without, moveProbability)[0];
   check(r2 && !r2.blockedBy && r2.branches.length === 2,
     "swap Farigiraf out and the Fake Out is a live two-branch decision again");
+}
+
+// ===========================================================================
+// LEAD SCORING: a different question from the bring-four.
+//
+// "Who beats their six over a game" and "who wins turn one" pull in different
+// directions. A Pokemon can be the best answer on the team and a poor lead, and
+// the reverse is more common - Incineroar leads on Intimidate and Fake Out
+// while winning almost no 1v1s. Scoring leads with the answer matrix would
+// recommend attackers every time, which is the complaint that prompted this.
+// ===========================================================================
+console.log("\n-- Intimidate is worth what their team is made of --");
+{
+  const physical = board(["garchomp", "incineroar", "basculegion", "whimsicott", "sinistcha", "aerodactyl"], []);
+  const special = board(["charizard-y", "sinistcha", "whimsicott", "floette-eternal", "gholdengo", "pelipper"], []);
+
+  const pShare = physicalShare(physical);
+  const sShare = physicalShare(special);
+  console.log(`      physical team: ${Math.round(pShare * 100)}% physical | special team: ${Math.round(sShare * 100)}%`);
+  check(pShare > 0.6, "a Garchomp/Incineroar/Basculegion side reads as mostly physical");
+  check(sShare < 0.25, "a Charizard-Y/Gholdengo/Pelipper side reads as mostly special");
+
+  const mineOf = (s, n) => Object.values(s.mons).find((m) => m.side === "me" && m.set.speciesId === n);
+  const starP = physical.mons[mineOf(physical, "Staraptor").uid];
+  const starS = special.mons[mineOf(special, "Staraptor").uid];
+  check(activeProfile(starP).ability === "Intimidate",
+    "base Staraptor has Intimidate (the Mega has Contrary instead)");
+
+  const intoPhys = scoreLeadPair(physical, starP, physical.mons[mineOf(physical, "Arcanine").uid]);
+  const intoSpec = scoreLeadPair(special, starS, special.mons[mineOf(special, "Arcanine").uid]);
+  const factor = (r) => r.factors.find((f) => f.kind === "intimidate");
+  console.log(`      Intimidate scores ${factor(intoPhys)?.points} into physical, ${factor(intoSpec)?.points} into special`);
+  check(factor(intoPhys).points > factor(intoSpec).points * 2,
+    "Intimidate is worth far more into a physical side than a special one");
+  check(/worth much less than usual/.test(factor(intoSpec).text),
+    "  and it SAYS so against a special side rather than quietly scoring low");
+}
+
+// ===========================================================================
+console.log("\n-- leading Intimidate into Defiant is a liability --");
+{
+  const mineOf = (s, n) => Object.values(s.mons).find((m) => m.side === "me" && m.set.speciesId === n);
+  const withDefiant = board(["garchomp", "kingambit", "incineroar", "basculegion", "whimsicott", "sinistcha"], []);
+  const without = board(["garchomp", "incineroar", "basculegion", "whimsicott", "sinistcha", "aerodactyl"], []);
+
+  const a = scoreLeadPair(withDefiant, withDefiant.mons[mineOf(withDefiant, "Staraptor").uid], withDefiant.mons[mineOf(withDefiant, "Arcanine").uid]);
+  const b = scoreLeadPair(without, without.mons[mineOf(without, "Staraptor").uid], without.mons[mineOf(without, "Arcanine").uid]);
+
+  const liability = a.factors.find((f) => f.kind === "liability");
+  check(liability && liability.points < 0,
+    `a Defiant Kingambit on their side is scored as a liability (${liability?.points})`);
+  check(/makes them STRONGER/.test(liability.text),
+    `  and says why: "${liability.text.slice(-46)}"`);
+  check(a.score < b.score,
+    `the same lead scores lower into a Defiant team (${a.score} vs ${b.score})`);
+  check(!b.factors.some((f) => f.kind === "liability"),
+    "  and no liability is claimed when nothing on their side has Defiant");
+}
+
+// ===========================================================================
+console.log("\n-- a lead is scored on turn one, not on winning 1v1s --");
+{
+  const s = board(["charizard-y", "garchomp", "incineroar", "kingambit", "whimsicott", "basculegion"], []);
+  const leads = suggestLeads(s);
+  check(leads.length > 0, `${leads.length} lead pairs scored`);
+  check(leads.every((l, i, arr) => i === 0 || arr[i - 1].score >= l.score),
+    "they come back ranked");
+
+  // Every factor has to be one of the things a LEAD does, not a damage race.
+  const kinds = new Set(leads.flatMap((l) => l.factors.map((f) => f.kind)));
+  console.log("      factors in play:", [...kinds].join(", "));
+  check(kinds.has("survives"),
+    "surviving turn one is scored - a lead that dies has contributed nothing");
+  check(kinds.has("fakeOut") || kinds.has("speedControl") || kinds.has("intimidate"),
+    "  and at least one genuinely lead-shaped factor is present");
+
+  // Fake Out only counts because it is turn one. If their side blanks priority,
+  // it is worth nothing and must not be counted.
+  const guarded = board(["farigiraf", "garchomp", "incineroar", "kingambit", "whimsicott", "basculegion"], []);
+  const mineOf = (st, n) => Object.values(st.mons).find((m) => m.side === "me" && m.set.speciesId === n);
+  const withFO = scoreLeadPair(guarded, guarded.mons[mineOf(guarded, "Raichu").uid], guarded.mons[mineOf(guarded, "Arcanine").uid]);
+  const foFactor = withFO.factors.find((f) => /Fake Out/.test(f.text));
+  check(foFactor && foFactor.points === 0,
+    "Fake Out scores ZERO when their side blanks the priority bracket");
+
+  // And restricted to the four I am bringing - suggesting a lead you cannot
+  // legally send out is worse than saying nothing.
+  const four = Object.values(s.mons).filter((m) => m.side === "me").slice(0, 4);
+  const restricted = suggestLeads(s, four);
+  const allowed = new Set(four.map((m) => m.uid));
+  check(restricted.every((l) => l.pair.every((m) => allowed.has(m.uid))),
+    "every suggested lead comes from the four being brought");
 }
 
 console.log(`\n${ok}/${total} passed`);

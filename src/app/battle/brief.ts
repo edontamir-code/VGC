@@ -21,6 +21,7 @@ import { bestBoardPlay } from "./spread.ts";
 import { budgetRead } from "./damageInference.ts";
 import { resourceWarnings, unansweredThreats } from "./resources.ts";
 import { doubleProtect, fakeOutReads } from "./protect.ts";
+import { suggestLeads } from "./leadScore.ts";
 import { moveProbability } from "./inference.ts";
 import type { PlanLine } from "../search/plan.ts";
 import { activeMons } from "./resolver.ts";
@@ -76,6 +77,31 @@ function bringBrief(state: BattleState): Brief {
 
   const seq = conditionSequence(state);
   if (seq.conflicts && seq.text) notes.push(seq.text);
+
+  // WHICH TWO to lead, scored separately from the four.
+  //
+  // These pull in different directions and must not share machinery: the four
+  // is "who beats their six over a game", the lead is "who wins turn one". A
+  // Pokemon can be the best answer on the team and a poor lead, and the reverse
+  // is more common - Incineroar leads on Intimidate and Fake Out while winning
+  // almost no 1v1s.
+  const leads = suggestLeads(state, bring.team);
+  if (leads.length) {
+    const best = leads[0];
+    advice.push(`Lead ${best.pair.map(nameOf).join(" + ")}.`);
+    for (const f of best.factors) {
+      if (f.points >= 60) notes.push(f.text);
+      // A liability is worth saying out loud even when the pair still wins.
+      else if (f.kind === "liability" && f.points < 0) urgent.push(f.text);
+    }
+    const runnerUp = leads[1];
+    if (runnerUp && best.score - runnerUp.score < 40) {
+      notes.push(
+        `${runnerUp.pair.map(nameOf).join(" + ")} is close (${runnerUp.score} vs ${best.score}) - ` +
+          `this is not a clear call.`
+      );
+    }
+  }
 
   return {
     phase: "roster",
