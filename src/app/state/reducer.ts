@@ -72,10 +72,7 @@ export type Action =
         problem?: string | null;
       }[];
       /** HP readings and faints you observed - applied after the simulation. */
-      effects?: (
-        | { kind: "hp"; uid: string; pct?: number; exact?: number }
-        | { kind: "faint"; uid: string }
-      )[];
+      effects?: TurnEffect[];
       /** Raw text, for the log. */
       script: string;
     }
@@ -148,6 +145,51 @@ function reconcile(state: BattleState, side: SideId): BattleState {
     );
   }
   return next;
+}
+
+/**
+ * Apply the health corrections carried by a turn script.
+ *
+ * Shared between the full-turn path and the health-only path, because a line
+ * that just reads the bars back ("chomp to 63%, incin 40%") is a normal thing
+ * to type and used to be dropped on the floor - the console reported success
+ * and nothing moved.
+ *
+ * `before` is the state as it was BEFORE the turn was simulated: the gap
+ * between what the simulator predicted and what you actually saw is the
+ * measurement that bounds their spread, so it has to come from there rather
+ * than from the already-updated board.
+ */
+/** A health correction carried by a turn script. */
+export type TurnEffect =
+  | { kind: "hp"; uid: string; pct?: number; exact?: number }
+  | { kind: "faint"; uid: string };
+
+function applyHpEffects(
+  state: BattleState,
+  before: BattleState,
+  effects: TurnEffect[] | undefined
+): { state: BattleState; hpBefore: Record<string, number> } {
+  let next = state;
+  const hpBefore: Record<string, number> = {};
+  for (const eff of effects ?? []) {
+    const mon = next.mons[eff.uid];
+    if (!mon) continue;
+    hpBefore[eff.uid] = before.mons[eff.uid]?.curHP ?? mon.curHP;
+    if (eff.kind === "faint") {
+      next = patchMon(next, eff.uid, (m) => ({ ...m, curHP: 0, fainted: true }));
+      next = log(next, `${mon.set.name} fainted.`, "hp");
+    } else {
+      const target = eff.exact !== undefined ? eff.exact : (mon.maxHP * (eff.pct ?? 100)) / 100;
+      next = patchMon(next, eff.uid, (m) => clampHP(m, target));
+      next = log(
+        next,
+        `${mon.set.name} corrected to ${next.mons[eff.uid].curHP}/${mon.maxHP} HP.`,
+        "hp"
+      );
+    }
+  }
+  return { state: next, hpBefore };
 }
 
 /** Recompute maxHP after a stat-affecting edit, preserving the HP fraction. */
@@ -605,7 +647,11 @@ export function reduce(state: BattleState, action: Action): BattleState {
 
     case "APPLY_TURN_SCRIPT": {
       const { entries, script } = action;
-      if (entries.length === 0) return state;
+      // A line that is ONLY health - "chomp to 63%, incin 40%" - is a valid
+      // and very common thing to type: you glance at the bars and correct the
+      // board without describing a turn. Bailing on an empty entry list threw
+      // those away silently, and worse, reported success while doing nothing.
+      if (entries.length === 0 && (action.effects ?? []).length === 0) return state;
 
       let next: BattleState = log(state, `Turn ${state.turn}: ${script}`, "action");
 
@@ -626,7 +672,10 @@ export function reduce(state: BattleState, action: Action): BattleState {
           "system"
         );
       }
-      if (usable.length === 0) return next;
+      // Nothing simulable left. If health corrections came with the line, they
+      // still have to land: "chomp to 63%, incin 40%" is a whole valid input on
+      // its own, and it is the fastest way to true the board up from the bars.
+      if (usable.length === 0) return applyHpEffects(next, state, action.effects).state;
 
       // 1. Everything they used is now CONFIRMED. This is the cheapest scouting
       //    there is - you already watched it happen.
@@ -674,25 +723,9 @@ export function reduce(state: BattleState, action: Action): BattleState {
       //    Record the HP each Pokemon was on BEFORE the correction, because the
       //    difference between that and what you report is a measurement of the
       //    attacker's investment - see step 5.
-      const hpBeforeEffect: Record<string, number> = {};
-      for (const eff of action.effects ?? []) {
-        const mon = next.mons[eff.uid];
-        if (!mon) continue;
-        hpBeforeEffect[eff.uid] = state.mons[eff.uid]?.curHP ?? mon.curHP;
-        if (eff.kind === "faint") {
-          next = patchMon(next, eff.uid, (m) => ({ ...m, curHP: 0, fainted: true }));
-          next = log(next, `${mon.set.name} fainted.`, "hp");
-        } else {
-          const target =
-            eff.exact !== undefined ? eff.exact : (mon.maxHP * (eff.pct ?? 100)) / 100;
-          next = patchMon(next, eff.uid, (m) => clampHP(m, target));
-          next = log(
-            next,
-            `${mon.set.name} corrected to ${next.mons[eff.uid].curHP}/${mon.maxHP} HP.`,
-            "hp"
-          );
-        }
-      }
+      const applied = applyHpEffects(next, state, action.effects);
+      next = applied.state;
+      const hpBeforeEffect = applied.hpBefore;
 
       // 5. The damage you just reported is a MEASUREMENT of their spread.
       //

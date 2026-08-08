@@ -324,14 +324,23 @@ export function runCommand(text: string, state: BattleState): CommandResult {
         script: trimmed,
       },
     ],
-    echo: usable
-      .map((e) => {
+    // The echo has to cover a health-only line too. "chomp to 63%" applied
+    // correctly but echoed nothing, so the only feedback was an empty reply -
+    // indistinguishable from the input being ignored, which it previously was.
+    echo: [
+      ...usable.map((e) => {
         const m = state.mons[e.actorUid!];
         // activeProfile, not set.name: a stone holder that is not this battle's
         // Mega must not be echoed back as its Mega form.
         return `${m ? nameOf(m) : "?"}: ${e.moveName ?? "?"}`;
-      })
-      .join(" | "),
+      }),
+      ...turn.effects.map((f) => {
+        const m = state.mons[f.uid];
+        const who = m ? nameOf(m) : "?";
+        if (f.kind === "faint") return `${who} fainted`;
+        return `${who} -> ${f.pct !== undefined ? `${f.pct}%` : `${f.exact} HP`}`;
+      }),
+    ].join(" | "),
     problems: turn.entries
       .filter((e) => e.problem)
       .map((e) => `"${e.raw.trim()}": ${e.problem}`),

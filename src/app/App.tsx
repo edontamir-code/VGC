@@ -11,22 +11,27 @@ import ConsolePanel from "./ui/ConsolePanel.tsx";
 import TurnInput from "./ui/TurnInput.tsx";
 import TeamPreview from "./ui/TeamPreview.tsx";
 import TeamTab from "./ui/TeamTab.tsx";
-import SpeedTab from "./ui/SpeedTab.tsx";
-import OptimizerTab from "./ui/OptimizerTab.tsx";
 import TurnLog from "./ui/TurnLog.tsx";
 import HistoryTab from "./ui/HistoryTab.tsx";
 
-type TabId = "battle" | "calc" | "preview" | "plan" | "speed" | "team" | "sp" | "log" | "history";
+/**
+ * Six tabs, down from nine.
+ *
+ * Nine meant hunting for the one you wanted mid-turn, which is the opposite of
+ * what a companion app is for. Speed order moved INTO Calc, where it is read
+ * alongside the damage it changes rather than as a separate trip. History
+ * moved in with the Log - both are "what happened", one this game and one
+ * across games. The SP optimizer is gone: the team is built and the tool is
+ * about playing it now, not tuning spreads.
+ */
+type TabId = "battle" | "calc" | "plan" | "preview" | "team" | "log";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "battle", label: "Battle" },
   { id: "preview", label: "Preview" },
   { id: "plan", label: "Plan" },
   { id: "calc", label: "Calc" },
-  { id: "speed", label: "Speed" },
-  { id: "history", label: "History" },
   { id: "team", label: "My team" },
-  { id: "sp", label: "SP optimizer" },
   { id: "log", label: "Log" },
 ];
 
@@ -117,11 +122,13 @@ function Shell() {
       {tab === "calc" && <CalcTab />}
       {tab === "preview" && <PreviewTab />}
       {tab === "plan" && <PlanTab />}
-      {tab === "speed" && <SpeedTab />}
       {tab === "team" && <TeamTab />}
-      {tab === "sp" && <OptimizerTab />}
-      {tab === "history" && <HistoryTab />}
-      {tab === "log" && <TurnLog />}
+      {tab === "log" && (
+        <>
+          <TurnLog />
+          <HistoryTab />
+        </>
+      )}
 
       <div className="bottombar">
         <div className="bottombar-inner">

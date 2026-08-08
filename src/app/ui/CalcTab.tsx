@@ -8,6 +8,8 @@ import { useBattle } from "../state/store.tsx";
 import { calcGrid, byBoardImpact } from "../battle/calcGrid.ts";
 import type { CalcRow, CalcCell } from "../battle/calcGrid.ts";
 import { fieldRead } from "../battle/fieldRead.ts";
+import { comboPlays } from "../battle/combo.ts";
+import SpeedTab from "./SpeedTab.tsx";
 import { activeMons } from "../battle/resolver.ts";
 
 /** Colour by how close the hit is to removing the target. */
@@ -119,6 +121,7 @@ export default function CalcTab() {
 
   const grid = useMemo(() => calcGrid(state), [state]);
   const field = useMemo(() => fieldRead(state), [state]);
+  const combos = useMemo(() => comboPlays(state, 6), [state]);
 
   const theirActives = activeMons(state, "opp");
   const myActives = activeMons(state, "me");
@@ -175,6 +178,23 @@ export default function CalcTab() {
         )}
       </section>
 
+      {/* What the PAIR threatens. This sits above the per-move grid because it
+          is the actual question - "Helping Hand + Hyper Voice or Psychic +
+          Hyper Voice" - and neither half of it is visible one move at a time. */}
+      {combos.length > 0 && (
+        <section className="calc-section">
+          <h3>Best plays this turn</h3>
+          <ul className="calc-combos">
+            {combos.map((p, i) => (
+              <li key={i} className={p.kos > 0 ? "has-ko" : undefined}>
+                <div className="calc-combolabel">{p.label}</div>
+                <div className="calc-combotext">{p.text}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <Grid
         title="Your moves"
         rows={mineSorted}
@@ -187,6 +207,11 @@ export default function CalcTab() {
         targets={myUids}
         targetNames={myUids.map(nameFor)}
       />
+
+      <section className="calc-section">
+        <h3>Speed order</h3>
+        <SpeedTab />
+      </section>
 
       {grid.assumptions.length > 0 && (
         <section className="calc-assume">
