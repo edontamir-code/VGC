@@ -99,7 +99,15 @@ console.log("-- engine parity through BattleState --");
   check(near(rc.maxPct, 121.6) && rc.typeMult === 2,
     `Sylveon Hyper Voice -> Garchomp: ${rc.maxPct}% x${rc.typeMult} (exp 121.6 x2)`);
   check(rc.resolvedType === "Fairy", `  Pixilate resolved Hyper Voice to ${rc.resolvedType}`);
-  const rs = resolveMatchup(s.mons[syl.uid], s.mons[star.uid], "Hyper Voice", s);
+  // The BUILD_BRIEF number is for MEGA Staraptor (Fighting/Flying, so Fairy is
+  // x2). Nothing starts Mega Evolved any more - Mega is an action you take -
+  // so it has to be assigned before this is the Mega matchup at all.
+  const base = resolveMatchup(s.mons[syl.uid], s.mons[star.uid], "Hyper Voice", s);
+  check(base.typeMult === 1,
+    `base Staraptor is Normal/Flying, so Fairy is only x${base.typeMult}`);
+
+  const sM = reduce(s, { type: "SET_MEGA", side: "me", uid: star.uid });
+  const rs = resolveMatchup(sM.mons[syl.uid], sM.mons[star.uid], "Hyper Voice", sM);
   check(near(rs.maxPct, 108.4) && rs.typeMult === 2,
     `Sylveon Hyper Voice -> M-Staraptor: ${rs.maxPct}% x${rs.typeMult} (exp 108.4 x2)`);
 }
@@ -115,9 +123,11 @@ console.log("-- engine parity through BattleState --");
   const chomp = oppNamed(s, "garchomp");
   const delph = mineNamed(s, "Delphox");
 
+  // NOTHING starts Mega Evolved. Mega Evolution is an action taken during a
+  // turn, and until it is taken you have the base form with the base ability.
   const megasByDefault = Object.values(s.mons).filter((m) => m.side === "me" && m.hasMega);
-  check(megasByDefault.length === 1,
-    `a fresh board Mega Evolves exactly one of mine (${megasByDefault.map((m) => m.set.name).join(", ")})`);
+  check(megasByDefault.length === 0,
+    `a fresh board has NOBODY Mega Evolved (${megasByDefault.length})`);
   check(!s.mons[delph.uid].hasMega,
     "Delphox is NOT Mega'd by default - Staraptor holds the side's Mega");
 

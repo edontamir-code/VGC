@@ -271,6 +271,17 @@ export function parseTurn(text: string, state: BattleState): ParsedTurn {
     // goes to incin", "zard -> incin" - and a script that only accepts one of
     // them is a script you stop using. The filler words after the verb ("to",
     // "for", "into", "with", "out") are dropped before matching the target.
+    // "raichu megas zap cannon on chomp" / "mega raichu, zap cannon".
+    //
+    // Mega Evolution is a separate decision that happens BEFORE the move, so it
+    // is a flag on the action rather than an action of its own. Stripped out
+    // here so the rest of the phrase parses as an ordinary move.
+    let megaFlag = false;
+    if (rest.length && /^(mega|megas|megaevolve|mega-evolve|megaevolves)$/i.test(norm(rest[0]))) {
+      megaFlag = true;
+      rest = rest.slice(1);
+    }
+
     const benchMons = state.sides[actorMon.side].bench
       .map((u) => state.mons[u])
       .filter((m): m is MonState => Boolean(m) && !m.fainted);
@@ -365,7 +376,12 @@ export function parseTurn(text: string, state: BattleState): ParsedTurn {
       }
     }
 
-    entry.action = { kind: "move", moveName, targetUid: entry.targetUid ?? undefined };
+    entry.action = {
+      kind: "move",
+      moveName,
+      targetUid: entry.targetUid ?? undefined,
+      ...(megaFlag ? { mega: true } : {}),
+    };
     if (entry.problem) problems.push(`"${raw}": ${entry.problem}`);
     entries.push(entry);
   });

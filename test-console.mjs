@@ -423,8 +423,9 @@ console.log("\n-- the un-Mega'd stone holder is never called a Mega --");
   const raichu = state.mons[mine(state, "Raichu").uid];
   const star = state.mons[mine(state, "Staraptor").uid];
 
-  check(raichu.hasMega && !star.hasMega,
-    "Raichu holds this battle's Mega; Staraptor carries a stone but is in its base form");
+  // Nothing starts Mega Evolved, so BOTH are base forms until one commits.
+  check(!raichu.hasMega && !star.hasMega,
+    "neither stone holder has Mega Evolved yet - Mega is an action, not a start state");
   check(nameOf(star) === "Staraptor" && star.set.name === "Mega Staraptor",
     `the display name is "${nameOf(star)}" even though set.name is "${star.set.name}"`);
 
@@ -446,11 +447,12 @@ console.log("\n-- the un-Mega'd stone holder is never called a Mega --");
   check(bad.length === 0,
     bad.length ? `planner still says: ${bad[0].label}` : "no planner line calls it Mega Staraptor");
 
-  // And the one that IS the Mega keeps its Mega name - this must not overcorrect.
-  check(nameOf(raichu) === "Mega Raichu Y",
-    `the actual Mega is still named "${nameOf(raichu)}"`);
-  check(lines.some((l) => /Mega Raichu Y/.test(l.label)) || lines.length === 0,
-    "  and the planner uses that name for it");
+  // And once it DOES Mega, it keeps its Mega name - this must not overcorrect.
+  const megaed = reduce(state, { type: "SET_MEGA", side: "me", uid: raichu.uid });
+  check(nameOf(megaed.mons[raichu.uid]) === "Mega Raichu Y",
+    `once Mega Evolved it is named "${nameOf(megaed.mons[raichu.uid])}"`);
+  check(nameOf(megaed.mons[star.uid]) === "Staraptor",
+    "  and the other stone holder is still its base form");
 }
 
 // ===========================================================================

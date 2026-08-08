@@ -13,6 +13,15 @@ export interface MoveAction {
   moveName: string;
   /** undefined for spread moves and self-targeting status moves. */
   targetUid?: string;
+  /**
+   * Mega Evolve first, then use this move.
+   *
+   * Mega Evolution is a choice you make ON a turn, not a state you start in.
+   * It resolves after switches and before any move, so the Mega form's stats
+   * and ability apply to the move made the same turn - but NOT to anything
+   * that happened before it, and not at all if you never take it.
+   */
+  mega?: boolean;
 }
 export interface SwitchAction {
   kind: "switch";
@@ -38,7 +47,8 @@ export function actionLabel(a: Action, state: BattleState): string {
     return `switch to ${to ? nameOf(to) : "?"}`;
   }
   const t = a.targetUid ? state.mons[a.targetUid] : null;
-  return t ? `${a.moveName} -> ${nameOf(t)}` : a.moveName;
+  const body = t ? `${a.moveName} -> ${nameOf(t)}` : a.moveName;
+  return a.mega ? `MEGA, then ${body}` : body;
 }
 
 /** Does this move hit both foes? */
@@ -121,6 +131,19 @@ export function legalActions(
     for (const foe of foes) out.push({ kind: "move", moveName, targetUid: foe.uid });
   }
 
+  // Mega Evolution doubles this Pokemon's options: every move can be made
+  // either as the base form or as the Mega. That is a real decision - Raichu
+  // keeps Lightning Rod (and its Electric redirection) until it commits - so
+  // the planner has to be able to weigh both, not be handed one.
+  //
+  // Only ever offered to a Pokemon that can Mega on a side that has not used
+  // its Mega, so at most one Pokemon's action list grows.
+  if (canMegaNow(mon, state)) {
+    for (const a of [...out]) {
+      if (a.kind === "move") out.push({ ...a, mega: true });
+    }
+  }
+
   // Switching is always available, even under an Encore. For the opponent this
   // includes every bench mon that could still be part of their brought four -
   // being blind to their back line is what makes a "pin" a lie.
@@ -131,6 +154,15 @@ export function legalActions(
   }
 
   return out;
+}
+
+/** Can this Pokemon Mega Evolve right now - form available, side's Mega unspent? */
+export function canMegaNow(mon: MonState, state: BattleState): boolean {
+  if (mon.hasMega) return false;
+  if (!mon.set.megaName && !mon.set.baseForm) return false;
+  return !Object.values(state.mons).some(
+    (m) => m.side === mon.side && m.hasMega && (m.set.megaName || m.set.baseForm)
+  );
 }
 
 export interface ProfileOpts {

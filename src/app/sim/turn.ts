@@ -16,6 +16,7 @@ import { STATUS_MOVES } from "../battle/statusMoves.ts";
 import { speedMonOf, speedFieldOf } from "../battle/speed.ts";
 import { effectiveSpeed } from "../../speed.js";
 import { activeMons } from "../battle/resolver.ts";
+import { computeStats } from "../../engine.js";
 import { protectSuccessChance } from "../battle/protect.ts";
 import { applyIntimidate, applyStages } from "../battle/stages.ts";
 import type { StageDelta } from "../battle/stages.ts";
@@ -237,6 +238,49 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
     events.push({ actorUid: uid, text: `${nameOf(s.mons[uid])} switches to ${nameOf(s.mons[action.toUid])}` });
     s = doSwitch(s, uid, action.toUid);
     s = intimidateOnEntry(s, action.toUid);
+  }
+
+  // --- 1b. Mega Evolution --------------------------------------------------
+  //
+  // Resolves AFTER switches and BEFORE any move, which is what makes the timing
+  // matter: the Mega form's stats and ability apply to the move made this turn,
+  // and the base form's apply to everything up to that point. Raichu is
+  // Lightning Rod - redirecting Electric onto itself - until the instant it
+  // becomes No Guard.
+  //
+  // Only one per side, ever. A plan asking for a second is ignored rather than
+  // silently granted.
+  for (const [uid, action] of Object.entries(plan)) {
+    if (!action || action.kind !== "move" || !action.mega) continue;
+    const mon = s.mons[uid];
+    if (!mon || mon.fainted || mon.hasMega) continue;
+    if (!mon.set.megaName && !mon.set.baseForm) continue;
+    const spent = Object.values(s.mons).some(
+      (m) => m.side === mon.side && m.hasMega && (m.set.megaName || m.set.baseForm)
+    );
+    if (spent) continue;
+
+    const stats = computeStats(
+      mon.set.base,
+      mon.set.sp,
+      mon.set.nature
+    );
+    const frac = mon.maxHP > 0 ? mon.curHP / mon.maxHP : 1;
+    s = put(s, {
+      ...mon,
+      hasMega: true,
+      maxHP: stats.hp,
+      curHP: Math.max(1, Math.min(stats.hp, Math.round(stats.hp * frac))),
+    });
+    const now = s.mons[uid];
+    events.push({
+      actorUid: uid,
+      text:
+        `${nameOf(now)} Mega Evolved - ability is now ${activeProfile(now).ability}` +
+        ` (was ${activeProfile(mon).ability})`,
+    });
+    // A Mega Evolving Pokemon's ability lands like a switch-in ability would.
+    s = intimidateOnEntry(s, uid);
   }
 
   // Movers are whoever is now active with a move queued. A mon that switched

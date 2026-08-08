@@ -128,19 +128,16 @@ export function newBattleState(customTeam?: MonSet[]): BattleState {
   const sets = customTeam?.length ? customTeam : TEAM.map((m) => setFromTeam(m));
   const mine = sets.map((s) => makeMonState({ ...s }, "me", "team"));
 
-  // Only ONE of my Pokemon Mega Evolves per battle. A roster can carry several
-  // stones, but the board must never show two Megas at once - every number
-  // computed off that board would be inflated for both of them. The first stone
-  // holder gets it by default and the Preview tab moves it.
-  let megaTaken = false;
+  // NOBODY has Mega Evolved at the start of a battle.
+  //
+  // Mega Evolution is an action you take during a turn, not a state you begin
+  // in. Until you take it you have the BASE form with the BASE ability, and
+  // that difference is load-bearing rather than cosmetic: Raichu is Lightning
+  // Rod - which REDIRECTS Electric moves onto it - right up until it becomes
+  // No Guard. Starting the board already Mega'd meant every ability, stat and
+  // calc for that Pokemon was wrong for as long as it had not actually Mega'd.
   for (let i = 0; i < mine.length; i++) {
     if (!mine[i].hasMega) continue;
-    if (!megaTaken) {
-      megaTaken = true;
-      continue;
-    }
-    // HP has to come back down with it: a base-form Pokemon does not keep the
-    // Mega's HP stat.
     const set = mine[i].set;
     const stats = computeStats(set.baseForm ?? set.base, set.sp, set.nature);
     mine[i] = { ...mine[i], hasMega: false, maxHP: stats.hp, curHP: stats.hp };

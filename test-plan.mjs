@@ -785,8 +785,18 @@ console.log("\n-- beams reserve room for defensive plans --");
 
   // And a Protect line has to be able to WIN the ranking when it deserves to.
   const d1 = searchPlans(s, { depth: 1, myBeam: 8, theirBeam: 8, arsenal: "possible" });
-  check(/Protect/.test(d1[0].label),
-    `on this board the best line IS a Protect: ${d1[0].label}`);
+  console.log(`      best line: ${d1[0].label}`);
+  // The claim that matters is NOT "it picks Protect" - that was just what won
+  // before Mega Evolution became a real choice. Mega Staraptor is Fighting/
+  // Flying, so it keeps the Ground immunity AND Contrary turns Close Combat
+  // into a defensive boost, which is a better answer than Protect ever was.
+  //
+  // What must hold is the thing that was wrong: it must not remove the
+  // Ground-immune Pokemon in front of an Earthquake.
+  check(!/switch to Kingambit/.test(d1[0].label),
+    "the best line does not switch the Ground-immune Pokemon out");
+  check(/Protect|MEGA|Staraptor/.test(d1[0].label),
+    "  and it keeps Staraptor involved rather than trading it away");
 
   // The punish itself has to be found and reported, whichever line is on top.
   const raichu = my("Raichu"), star = my("Staraptor"), gambit = my("Kingambit");

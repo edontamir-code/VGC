@@ -20,6 +20,7 @@ import { MOVES } from "./src/data/moves.js";
 import { searchPlans } from "./src/app/search/plan.ts";
 import { evaluate, DEFAULT_WEIGHTS } from "./src/app/search/evaluate.ts";
 import { resolveMatchup } from "./src/app/battle/damage.ts";
+import { legalActions } from "./src/app/sim/actions.ts";
 
 let ok = 0, total = 0;
 const check = (pass, label) => {
@@ -352,6 +353,84 @@ console.log("\n-- lines are weighted by how likely they are to work --");
   const losing = -500;
   check(rank(losing, 200, 0.5) < rank(losing, 200, 1.0),
     "even from a losing position, a move that might miss ranks below one that cannot");
+}
+
+// ===========================================================================
+// MEGA EVOLUTION is an action, not a starting state.
+//
+// You send out the BASE form with the BASE ability and choose to Mega on a
+// turn. That difference is load-bearing rather than cosmetic: Raichu is
+// Lightning Rod - which REDIRECTS Electric moves onto itself - right up until
+// it becomes No Guard. Starting the board already Mega'd made every ability,
+// stat and calc for that Pokemon wrong until it had actually Mega'd.
+// ===========================================================================
+console.log("\n-- Mega is a choice you make on a turn --");
+{
+  const fresh = newBattleState();
+  const holders = Object.values(fresh.mons).filter(
+    (m) => m.side === "me" && (m.set.megaName || m.set.baseForm)
+  );
+  check(holders.length >= 2, `my team carries ${holders.length} Mega stones`);
+  check(holders.every((m) => !m.hasMega),
+    "  and NONE of them has Mega Evolved on a fresh board");
+
+  let s = play([
+    "chomp, incin, zard, gambit, whims, bascu",
+    "they lead chomp and incin",
+    "we lead raichu and staraptor",
+  ]);
+  const rai = mine(s, "Raichu");
+  const star = mine(s, "Staraptor");
+  const chomp = opp(s, "garchomp");
+
+  // The ability difference is the whole point.
+  check(activeProfile(s.mons[rai.uid]).ability === "Lightning Rod",
+    "out of the box Raichu has Lightning Rod, which redirects Electric onto it");
+  const spaBefore = battleStats(s.mons[rai.uid], s).spa;
+
+  // Both stone holders are offered the choice while the side's Mega is unspent.
+  const acts = legalActions(s.mons[rai.uid], s, { allowSwitch: false });
+  check(acts.some((a) => a.mega), `Raichu is offered ${acts.filter((a) => a.mega).length} Mega variants`);
+  check(acts.some((a) => !a.mega), "  and the same moves WITHOUT Mega Evolving");
+  check(legalActions(s.mons[star.uid], s, { allowSwitch: false }).some((a) => a.mega),
+    "Staraptor is offered them too - the Mega is not yet spent");
+
+  // Taking it changes ability and stats, before the move resolves.
+  const r = simulateTurn(s, {
+    [rai.uid]: { kind: "move", moveName: "Focus Blast", targetUid: chomp.uid, mega: true },
+  }, W);
+  const after = r.state.mons[rai.uid];
+  check(after.hasMega, "the Mega action lands");
+  check(activeProfile(after).ability === "No Guard",
+    `  ability changed Lightning Rod -> ${activeProfile(after).ability}`);
+  check(battleStats(after, r.state).spa > spaBefore,
+    `  and the stats are the Mega's: SpA ${spaBefore} -> ${battleStats(after, r.state).spa}`);
+  check(r.events.some((e) => /Mega Evolved/.test(e.text) && /was Lightning Rod/.test(e.text)),
+    "  the log names both abilities, so the swap is visible");
+
+  // ONE per side, ever.
+  check(!legalActions(r.state.mons[star.uid], r.state, { allowSwitch: false }).some((a) => a.mega),
+    "with the Mega spent, Staraptor is no longer offered it");
+  const second = simulateTurn(r.state, {
+    [star.uid]: { kind: "move", moveName: "Close Combat", targetUid: chomp.uid, mega: true },
+  }, W);
+  check(!second.state.mons[star.uid].hasMega,
+    "  and a plan that asks for a second Mega is ignored, not granted");
+
+  // The console has to be able to say it.
+  const typed = play([
+    "chomp, incin, zard, gambit, whims, bascu",
+    "they lead chomp and incin",
+    "we lead raichu and staraptor",
+    "raichu megas focus blast on chomp, staraptor tailwind",
+  ]);
+  const typedRai = Object.values(typed.mons).find(
+    (m) => m.side === "me" && m.set.speciesId === "Raichu"
+  );
+  check(typedRai.hasMega,
+    `"raichu megas focus blast on chomp" Mega Evolves it: ${activeProfile(typedRai).displayName}`);
+  check(activeProfile(typedRai).ability === "No Guard",
+    "  with the Mega ability in place afterwards");
 }
 
 console.log(`\n${ok}/${total} passed`);

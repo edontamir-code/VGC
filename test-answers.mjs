@@ -50,15 +50,17 @@ console.log("-- No Guard --");
 
   check(MOVES["Zap Cannon"].accuracy === 50, "Zap Cannon is recorded as 50% accurate");
 
-  const acc = effectiveAccuracy(MOVES["Zap Cannon"].accuracy, s.mons[raichu.uid], s.mons[chomp.uid]);
-  check(acc.accuracy === 100 && acc.noGuard,
-    `Mega Raichu Y's No Guard makes it ${acc.accuracy}% - it always hits`);
-
-  // Un-Mega'd it has Lightning Rod instead, and the move goes back to a coinflip.
-  const pre = reduce(s, { type: "TOGGLE_MEGA", uid: raichu.uid });
-  const preAcc = effectiveAccuracy(MOVES["Zap Cannon"].accuracy, pre.mons[raichu.uid], pre.mons[chomp.uid]);
+  // Nothing starts Mega Evolved, so this begins as BASE Raichu with Lightning
+  // Rod - and Zap Cannon is a coinflip until it commits. That order is the
+  // point: No Guard is something you spend your Mega on, not something you have.
+  const preAcc = effectiveAccuracy(MOVES["Zap Cannon"].accuracy, s.mons[raichu.uid], s.mons[chomp.uid]);
   check(preAcc.accuracy === 50 && !preAcc.noGuard,
-    `before it Megas it has Lightning Rod, so Zap Cannon is back to ${preAcc.accuracy}%`);
+    `base Raichu has Lightning Rod, so Zap Cannon is a ${preAcc.accuracy}% coinflip`);
+
+  const mega = reduce(s, { type: "SET_MEGA", side: "me", uid: raichu.uid });
+  const acc = effectiveAccuracy(MOVES["Zap Cannon"].accuracy, mega.mons[raichu.uid], mega.mons[chomp.uid]);
+  check(acc.accuracy === 100 && acc.noGuard,
+    `once it Megas, No Guard makes it ${acc.accuracy}% - it always hits`);
 }
 
 // ===========================================================================
