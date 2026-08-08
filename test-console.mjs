@@ -153,7 +153,7 @@ console.log("\n-- the brief changes with the phase --");
   const r = runCommand("zard, incin, gambit, chomp, bascu, whims", s);
   for (const a of r.actions) s = reduce(s, a);
   const b = briefFor(s);
-  check(b.advice.some((a) => /^Bring /.test(a)), `after the roster it recommends a four: ${b.advice[0]}`);
+  check(b.advice.some((a) => /^Lead .* back /.test(a)), `after the roster it gives the lead AND the back: ${b.advice[0]}`);
   check(b.advice.some((a) => /is your Mega/.test(a)), "  and names which Pokemon Mega Evolves");
 }
 
@@ -412,22 +412,28 @@ console.log("\n-- planner advice upgrades the fast reply --");
   console.log("      deep:", p.headline);
   for (const n of p.notes) console.log("        -", n);
 
-  // The claim must be graded honestly, never stated flatly.
-  check(/Verified \d+ turns? ahead/.test(p.notes[0]),
-    "it says how many turns ahead it verified");
-  check(/checking every reply|beaming their replies/.test(p.notes[0]),
-    "  and whether that was exhaustive or beamed");
+  // The claim must be graded honestly - but the GRADE is structured data, not
+  // prose. How deep the search went and whether it enumerated or beamed are
+  // facts about the tool, and printing them in the reply to every move buried
+  // the two lines that change what you click. They still reach the UI through
+  // these fields, which render as a badge, and they still live in the Plan tab.
+  check(p.horizon === lines[0].horizon,
+    "the depth it verified to is carried through as data");
   check(p.exhaustive === lines[0].worst.exhaustive,
     "  the exhaustive flag is carried through, not assumed");
   check(p.pinVsPossible === lines[0].pinVsPossible,
     "  and the strong claim matches what the search actually proved");
-  check(/Their best answer:/.test(p.notes[1]),
+  check(p.isPin === lines[0].isPin,
+    "  as does whether it is a pin at all");
+  check(p.notes.some((n) => /Worst reply:/.test(n)),
     "it names their best reply, so the worst case is inspectable");
 
-  // A line with no guarantee must not be dressed up as one.
+  // Nothing in the reply may CLAIM a guarantee the search did not prove. The
+  // check is on what is asserted, not on a disclaimer being present - an
+  // absent boast is a better outcome than a printed caveat.
   if (!p.isPin) {
-    check(/no guarantee/.test(p.notes[0]),
-      "a line with no guarantee says so in plain words");
+    check(!/guaranteed/i.test(p.headline),
+      "a line with no guarantee is never called one");
   } else {
     check(/holds|comes out ahead/.test(p.notes[0]), "a pin states what it holds against");
   }

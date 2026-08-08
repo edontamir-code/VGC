@@ -268,10 +268,13 @@ export function conditionSequence(
 
   if (cancelled.length > 0) {
     const eg = cancelled[0];
+    // The mechanism (Tailwind doubles Speed, Trick Room reverses order) is
+    // format knowledge and was being restated in full every time. The example
+    // matchup is not - that is the part that says which of YOUR Pokemon this
+    // costs you, and it is the reason to care.
     parts.push(
-      `Never stack them. Tailwind doubles the Speed stat and Trick Room sends the SMALLEST ` +
-        `stat first, so they undo each other - ${nameOf(eg.mon)} outspeeds ${nameOf(eg.foe)} ` +
-        `under Tailwind alone and loses that with Trick Room also up` +
+      `Do not stack them: ${nameOf(eg.mon)} outspeeds ${nameOf(eg.foe)} under Tailwind alone ` +
+        `and loses it with Trick Room up` +
         (cancelled.length > 1 ? ` (${cancelled.length} matchups flip back)` : "") +
         `.`
     );

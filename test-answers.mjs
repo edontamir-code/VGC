@@ -5,7 +5,7 @@ import { newBattleState } from "./src/app/model/factory.ts";
 import { reduce } from "./src/app/state/reducer.ts";
 import { simulateTurn } from "./src/app/sim/turn.ts";
 import {
-  answerCell, buildAnswerMatrix, suggestBringFour,
+  answerCell, buildAnswerMatrix, suggestBringFour, DEAD_STONE_PENALTY,
   megaCapable, megaCapableMons, withMegaChoice,
 } from "./src/app/battle/answers.ts";
 import { itemSensitivity } from "./src/app/battle/itemRisk.ts";
@@ -474,6 +474,45 @@ console.log("\n-- Tailwind under Trick Room is a downgrade --");
   // A team that can only set one of them has no sequencing problem.
   const solo = conditionSequence(myBoard(["garchomp"]));
   check(solo.hasBoth || !solo.text, "a team without both never gets a sequencing warning");
+}
+
+
+// ===========================================================================
+// THE SECOND MEGA STONE IS A DEAD ITEM.
+//
+// The tool kept recommending both stone holders. Their base-form STATS were
+// already priced - withMegaChoice demotes whichever one is not the Mega - but
+// the item slot was free, and it is not: only one Pokemon can Mega Evolve, so
+// the second one plays the whole game with a stone that does nothing where
+// every other Pokemon gets a Life Orb, a Sash or an Assault Vest.
+//
+// This is a rule of thumb, not a law, so it is priced as a cost rather than
+// enforced as a ban - coverage still wins, which is exactly the case where
+// bringing both really is right.
+// ===========================================================================
+console.log("\n-- the second Mega Stone is a dead item slot --");
+{
+  const boards = [
+    ["incineroar", "whimsicott", "kingambit", "garchomp", "basculegion", "charizard-y"],
+    ["farigiraf", "incineroar", "garchomp", "charizard-y", "kingambit", "sinistcha"],
+  ];
+  for (const ids of boards) {
+    const s = myBoard(ids);
+    const pick = suggestBringFour(s);
+    const stones = pick.team.filter((m) => m.set.megaName || m.set.baseForm);
+    const dead = stones.filter((m) => m.uid !== pick.megaUid);
+    console.log(`      four: ${pick.team.map((m) => m.set.name).join(", ")}`);
+    console.log(`      stones in it: ${stones.length}, dead: ${dead.length}`);
+    check(dead.length === 0,
+      `no four is chosen that carries a stone it cannot use (${ids[0]} board)`);
+  }
+
+  // The penalty must never override real coverage. Sized below one cover, so a
+  // four that genuinely beats more of their team still wins with both stones.
+  check(DEAD_STONE_PENALTY < 1000,
+    `the penalty (${DEAD_STONE_PENALTY}) cannot outweigh a single unconditional cover (1000)`);
+  check(DEAD_STONE_PENALTY > 120 * 2,
+    "  but it does outweigh a couple of conditional covers, so it decides ties");
 }
 
 console.log(`\n${ok}/${total} passed`);

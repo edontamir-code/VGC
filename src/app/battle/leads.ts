@@ -155,36 +155,26 @@ export function readLeads(state: BattleState): LeadPlan[] {
       switch (kind) {
         case "tailwind": {
           const mine = mineWith(state, ["Tailwind"]);
-          text =
-            `${nameOf(foe)} is ${Math.round(p * 100)}% to be a Tailwind lead. Four turns of ` +
-            `double Speed decides who moves first in every matchup on the board.`;
-          // Tailwind is a SIDE effect: both teams can have one up at the same
-          // time and neither replaces the other. There is no first-or-second
-          // race to win, only the question of whether you spend a turn matching.
+          text = `${nameOf(foe)} ${Math.round(p * 100)}% Tailwind lead.`;
+          // Tailwind is a SIDE effect: both teams can have one up at once and
+          // neither replaces the other. That mechanic used to be spelled out
+          // here every game; what changes turn to turn is only whether you
+          // have an answer on the field.
           counter = mine
-            ? `${nameOf(mine)} has Tailwind too. Both can be up at once - yours does not cancel ` +
-              `theirs, it restores the Speed matchup to what it was. So the question is whether ` +
-              `a turn spent matching beats a turn spent attacking, not who gets there first.`
-            : `You have no Tailwind out. Deny it (Fake Out, Taunt, or KO the setter) or accept ` +
-              `being slower for four turns.`;
+            ? `${nameOf(mine)} can match it - a turn spent matching only restores parity.`
+            : `No Tailwind on your side: deny it or accept being slower for four turns.`;
           break;
         }
         case "trickRoom": {
-          text =
-            `${nameOf(foe)} is ${Math.round(p * 100)}% to be a Trick Room lead. If it goes up, ` +
-            `your fast Pokemon move last for five turns.`;
-          counter =
-            `Trick Room is -7 priority, so anything that stops it lands first: Fake Out, Taunt, ` +
-            `or simply KOing the setter. It is far cheaper to deny than to play through.`;
+          text = `${nameOf(foe)} ${Math.round(p * 100)}% Trick Room lead.`;
+          counter = `Deny it - Trick Room is -7 priority, so Fake Out, Taunt or a KO all land first.`;
           break;
         }
         case "fakeOut": {
-          text =
-            `${nameOf(foe)} is ${Math.round(p * 100)}% to have Fake Out, and turn 1 is the only ` +
-            `turn it works from. It flinches whatever it hits and costs you that Pokemon's turn.`;
-          counter =
-            `Assume the flinch when you plan turn 1 - do not build the turn around a Pokemon ` +
-            `that may not get to move. Protect dodges it entirely.`;
+          // The percentage is the only part of this that is not general
+          // knowledge - what Fake Out does does not need restating.
+          text = `${nameOf(foe)} ${Math.round(p * 100)}% Fake Out.`;
+          counter = null;
           break;
         }
         case "redirect": {
@@ -278,18 +268,17 @@ export function speedRaces(state: BattleState): SpeedRace[] {
     // order applies: faster moves first.
     const iResolveFirst = fasterThan(mine, theirs, state);
 
+    // Only the CONSEQUENCE, not the rule behind it. That Tailwinds coexist and
+    // Trick Rooms toggle is format knowledge; which of these two setters
+    // resolves second on this board is not, and it is the whole read.
     const text =
       kind === "tailwind"
-        ? `Both of you have Tailwind. They do not cancel - both sides can be doubled at once, ` +
-          `so setting yours restores the Speed matchup rather than denying theirs. Spend the ` +
-          `turn only if being back to parity is worth more than attacking.`
+        ? `Both sides have Tailwind - they do not cancel, so matching only restores parity.`
         : iResolveFirst
-          ? `Both of you want Trick Room, and ${nameOf(mine)} is faster - so yours goes up first ` +
-            `and ${nameOf(theirs)} resolves SECOND and switches it straight off. Setting it the ` +
-            `same turn hands them the cancel for free. Stop them setting it, or wait.`
-          : `Both of you want Trick Room, and ${nameOf(mine)} is slower - so if they set it, ` +
-            `yours resolves second and cancels theirs. Being the slower setter is the good side ` +
-            `of this one.`;
+          ? `Trick Room war: ${nameOf(mine)} is faster, so ${nameOf(theirs)} resolves second ` +
+            `and switches yours straight off. Deny it or wait.`
+          : `Trick Room war: ${nameOf(mine)} is slower, so yours resolves second and cancels ` +
+            `theirs. You want to be the slower setter here.`;
 
     races.push({
       kind,
@@ -331,20 +320,27 @@ export function openingRead(state: BattleState): OpeningRead {
   const plans = foes.length ? readLeads(state) : [];
   const races = foes.length ? speedRaces(state) : [];
 
+  // Turn-one-only notes.
+  //
+  // "Fake Out only works on turn one" and "Fake Out is a cheap way to stop
+  // Trick Room" are rules of the game, not reads on this board. Anyone using
+  // this tool already knows them, and printing them beside every lead is how a
+  // useful panel turns into wallpaper - by the third game the real warnings are
+  // being skipped along with these.
+  //
+  // What is worth saying is the part that needs the board: WHO specifically is
+  // worth flinching, which depends on what they are about to do.
   const turnOneOnly: string[] = [];
   if (isLeadTurn) {
-    const fo = foes.filter((f) => moveProbability(f, "Fake Out") >= PLAN_CUTOFF);
-    if (fo.length) {
-      turnOneOnly.push(
-        `Fake Out is live this turn only - ${fo.map(nameOf).join(" and ")} can flinch you, ` +
-          `and from next turn they cannot.`
-      );
-    }
     const myFO = mine.filter((m) => scout(m).arsenal.includes("Fake Out"));
-    if (myFO.length) {
+    const setters = foes.filter(
+      (f) =>
+        moveProbability(f, "Trick Room") >= PLAN_CUTOFF ||
+        moveProbability(f, "Tailwind") >= PLAN_CUTOFF
+    );
+    if (myFO.length && setters.length) {
       turnOneOnly.push(
-        `${myFO.map(nameOf).join(" and ")} can Fake Out this turn and not later - it is the ` +
-          `cheapest way to stop a Trick Room or a Tailwind.`
+        `${nameOf(myFO[0])} Fake Out stops ${setters.map(nameOf).join(" or ")} setting up.`
       );
     }
   }

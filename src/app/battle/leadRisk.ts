@@ -145,17 +145,42 @@ export function leadRisks(state: BattleState): LeadRisk[] {
       const hi = Math.max(...fakeOutters.map((x) => x.r!.max));
       const who = fakeOutters.map((x) => name(x.foe)).join(" or ");
 
+      // "Always flinches" is only true from a LOWER priority bracket.
+      //
+      // Two Fake Outs are both +3, so they resolve against each other on
+      // Speed - and a flinch does nothing to a Pokemon that has already
+      // moved. If this mon has its own Fake Out and outspeeds every one of
+      // theirs, their Fake Out is reduced to chip damage: it lands, but the
+      // turn it was supposed to take away has already happened.
+      //
+      // Calling that "your move does not happen" is not a small overstatement.
+      // It is the difference between a Pokemon that is answered and one that
+      // is the answer.
+      const iHaveFakeOut =
+        me.set.moves.includes("Fake Out") && me.turnsOnField === 0;
+      const outspeedsAll =
+        iHaveFakeOut &&
+        fakeOutters.every(
+          (x) => movesFirst(me, x.foe, state, "Fake Out", "Fake Out").first === "a"
+        );
+
       risks.push({
         kind: "flinch",
         victimUid: me.uid,
         victim: me,
         sourceUids: fakeOutters.map((x) => x.foe.uid),
-        severity: "high",
+        // Still worth stating - it is chip damage on a Focus Sash mon, and it
+        // costs your PARTNER nothing to know - but it no longer costs a turn.
+        severity: outspeedsAll ? "low" : "high",
         certain: seen,
-        text:
-          `${who} can Fake Out ${name(me)} (+3 priority, always flinches) - whatever ` +
-          `you click on it this turn does not happen. ${lo}-${hi} damage.` +
-          (seen ? "" : " Assumed from the common set, not yet seen."),
+        text: outspeedsAll
+          ? `${who} can Fake Out ${name(me)}, but ${name(me)} has Fake Out too and is ` +
+            `faster - yours resolves first, so theirs only chips for ${lo}-${hi} and ` +
+            `flinches nothing. Your turn still happens.` +
+            (seen ? "" : " Assumed from the common set, not yet seen.")
+          : `${who} can Fake Out ${name(me)} (+3 priority, always flinches) - whatever ` +
+            `you click on it this turn does not happen. ${lo}-${hi} damage.` +
+            (seen ? "" : " Assumed from the common set, not yet seen."),
       });
 
       if (sashLive) {

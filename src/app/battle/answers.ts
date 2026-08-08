@@ -46,6 +46,24 @@ export type AnswerVerdict =
  */
 export const ANSWER_MAX_HITS = 2;
 
+/**
+ * What it costs to bring a second Mega Stone holder.
+ *
+ * Only one Pokemon per team can Mega Evolve, so the second stone holder plays
+ * the whole game in its base form AND with a dead item - no Life Orb, no Focus
+ * Sash, no Assault Vest, no Sitrus Berry. Every other Pokemon you could have
+ * brought instead gets a working one. The base-form STATS were already priced
+ * (withMegaChoice demotes it); the empty item slot was free, which is why the
+ * tool kept happily recommending both.
+ *
+ * Sized below one unconditional cover (1000) so it can never argue you out of
+ * a four that genuinely beats more of their team - that case is exactly when
+ * bringing both really is correct. Sized above two conditional covers (120
+ * each) so at equal coverage the four that actually spends its items wins,
+ * which is how the rule of thumb behaves in practice.
+ */
+export const DEAD_STONE_PENALTY = 300;
+
 export interface BestHit {
   moveName: string;
   /** Hits needed at my WORST roll - the honest number. */
@@ -437,6 +455,8 @@ export function suggestBringFour(
   if (mine.length === 0) return null;
 
   const holders = mine.filter(megaCapable);
+  // Which of mine hold a Mega Stone, for the dead-item penalty below.
+  const byUidHolder = new Set(holders.map((h) => h.uid));
   // One matrix per Mega assignment - built once, reused across every four.
   const choices: (string | null)[] = [null, ...holders.map((h) => h.uid)];
   const perChoice = new Map<string | null, AnswerMatrix>();
@@ -524,14 +544,30 @@ export function suggestBringFour(
       }
       const misses = stillMissing;
 
-      // Coverage dominates. A conditional answer is real - it is why you bring
-      // the Trick Room setter at all - but it costs a turn and can be stopped,
-      // so it is worth a fraction of an unconditional one and can never
-      // outweigh a four that just beats the thing outright.
+      // A stone holder that is not THE Mega is carrying a dead item.
+      //
+      // This is why "don't bring both Megas" is a real rule of thumb, and it
+      // is a cost the coverage count cannot see. Only one Pokemon per team can
+      // Mega Evolve, so the second stone holder plays the whole game in its
+      // base form AND with no working item - no Life Orb, no Focus Sash, no
+      // Assault Vest, no Sitrus. Every other Pokemon you could have brought
+      // gets one. The base-form stats are already priced (withMegaChoice
+      // demotes it), but the empty item slot was free.
+      //
+      // Deliberately smaller than one unconditional cover, so it can never
+      // talk you out of a four that genuinely beats more of their team - the
+      // rule of thumb loses to actual coverage, which is exactly when bringing
+      // both really is right. It is larger than two conditional covers, so at
+      // equal coverage the four that spends its items wins.
+      const deadStones = comboUids.filter(
+        (u) => u !== megaUid && byUidHolder.has(u)
+      ).length;
+
       const score =
         covers.length * 1000 +
         conditionalCovers.length * 120 +
         redundancy * 10 -
+        deadStones * DEAD_STONE_PENALTY -
         (megaUid === null && legal.length > 1 ? 1 : 0);
       if (best && score <= best.score) continue;
 

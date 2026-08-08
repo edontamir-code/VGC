@@ -56,14 +56,39 @@ function bringBrief(state: BattleState): Brief {
     };
   }
 
-  advice.push(
-    `Bring ${bring.team.map(nameOf).join(", ")}` +
-      (bring.megaName ? ` - ${bring.megaName} is your Mega.` : ".")
-  );
+  // WHICH TWO to lead, scored separately from the four.
+  //
+  // These pull in different directions and must not share machinery: the four
+  // is "who beats their six over a game", the lead is "who wins turn one". A
+  // Pokemon can be the best answer on the team and a poor lead, and the reverse
+  // is more common - Incineroar leads on Intimidate and Fake Out while winning
+  // almost no 1v1s.
+  const leads = suggestLeads(state, bring.team);
+  const best = leads[0] ?? null;
+
+  // One line, in the shape of the decision you are about to make. "Bring these
+  // four" and "lead these two" were two separate lines that had to be read
+  // together and mentally intersected to work out who was actually in the back.
+  if (best) {
+    const leadUids = new Set(best.pair.map((m) => m.uid));
+    const back = bring.team.filter((m) => !leadUids.has(m.uid));
+    advice.push(
+      `Lead ${best.pair.map(nameOf).join(" + ")}, back ${back.map(nameOf).join(" + ")}` +
+        (bring.megaName ? `. ${bring.megaName} is your Mega.` : ".")
+    );
+  } else {
+    advice.push(
+      `Bring ${bring.team.map(nameOf).join(", ")}` +
+        (bring.megaName ? ` - ${bring.megaName} is your Mega.` : ".")
+    );
+  }
+
+  // "Only one Pokemon Mega Evolves" is a rule of the format. What is worth
+  // saying is that this specific Pokemon is in the four WITHOUT its stone
+  // doing anything - which is a cost you are choosing to pay.
   if (bring.megaBenched.length) {
     notes.push(
-      `${bring.megaBenched.join(" and ")} ${bring.megaBenched.length === 1 ? "comes" : "come"} ` +
-        `as the base form. Only one Pokemon Mega Evolves.`
+      `${bring.megaBenched.join(" and ")} plays as the base form with a dead item slot.`
     );
   }
   for (const r of bring.conditionalReasons) advice.push(r);
@@ -78,27 +103,19 @@ function bringBrief(state: BattleState): Brief {
   const seq = conditionSequence(state);
   if (seq.conflicts && seq.text) notes.push(seq.text);
 
-  // WHICH TWO to lead, scored separately from the four.
-  //
-  // These pull in different directions and must not share machinery: the four
-  // is "who beats their six over a game", the lead is "who wins turn one". A
-  // Pokemon can be the best answer on the team and a poor lead, and the reverse
-  // is more common - Incineroar leads on Intimidate and Fake Out while winning
-  // almost no 1v1s.
-  const leads = suggestLeads(state, bring.team);
-  if (leads.length) {
-    const best = leads[0];
-    advice.push(`Lead ${best.pair.map(nameOf).join(" + ")}.`);
+  if (best) {
+    // Only the strongest reason. Listing every factor above 60 turned one
+    // decision into a five-line essay about a lead already made.
+    const top = best.factors.filter((f) => f.points >= 60).sort((a, b) => b.points - a.points)[0];
+    if (top) notes.push(top.text);
+    // A liability is worth saying out loud even when the pair still wins.
     for (const f of best.factors) {
-      if (f.points >= 60) notes.push(f.text);
-      // A liability is worth saying out loud even when the pair still wins.
-      else if (f.kind === "liability" && f.points < 0) urgent.push(f.text);
+      if (f.kind === "liability" && f.points < 0) urgent.push(f.text);
     }
     const runnerUp = leads[1];
     if (runnerUp && best.score - runnerUp.score < 40) {
       notes.push(
-        `${runnerUp.pair.map(nameOf).join(" + ")} is close (${runnerUp.score} vs ${best.score}) - ` +
-          `this is not a clear call.`
+        `Close call - ${runnerUp.pair.map(nameOf).join(" + ")} scores ${runnerUp.score} vs ${best.score}.`
       );
     }
   }
@@ -106,9 +123,9 @@ function bringBrief(state: BattleState): Brief {
   return {
     phase: "roster",
     headline: `${bring.covers.length} of ${bring.covers.length + bring.misses.length + bring.conditionalCovers.length} covered outright.`,
-    advice,
-    urgent,
-    notes,
+    advice: dedupe(advice).slice(0, 3),
+    urgent: dedupe(urgent).slice(0, 2),
+    notes: dropRestatements(dedupe(notes), [...advice, ...urgent]).slice(0, 2),
   };
 }
 
@@ -144,7 +161,10 @@ function leadBrief(state: BattleState): Brief {
   const urgent: string[] = [];
   const notes: string[] = [];
 
-  for (const p of read.plans.slice(0, 3)) {
+  // Only the top plan gets prose. The second and third reads were each a
+  // paragraph, and three paragraphs about a lead you have already made is not
+  // a briefing - it is something to scroll past.
+  for (const p of read.plans.slice(0, 2)) {
     notes.push(p.text);
     if (p.counter) advice.push(p.counter);
   }
@@ -156,7 +176,47 @@ function leadBrief(state: BattleState): Brief {
   notes.push(...res.notes);
   for (const p of protectLines(state)) advice.push(p);
 
-  return { phase: "leads", headline: read.headline, advice, urgent, notes };
+  return {
+    phase: "leads",
+    headline: read.headline,
+    advice: dedupe(advice).slice(0, 2),
+    urgent: dedupe(urgent).slice(0, 2),
+    notes: dropRestatements(dedupe(notes), [...advice, ...urgent]).slice(0, 2),
+  };
+}
+
+/**
+ * Drop a note that says the same thing as something already shown.
+ *
+ * The Tailwind read appeared twice on a Whimsicott lead - once as the plan and
+ * once as the speed-control note - in different words, so exact dedupe missed
+ * it. Two paragraphs making one point reads as twice the information and is
+ * worse than either alone.
+ *
+ * Matching on the distinctive nouns is crude, but the failure mode is dropping
+ * a line the player can still find in the Plan tab, which is much cheaper than
+ * the alternative.
+ */
+const TOPICS = [
+  "trick room", "tailwind", "fake out", "protect", "intimidate",
+  "aurora veil", "light screen", "reflect", "helping hand",
+];
+function dropRestatements(notes: string[], shown: string[]): string[] {
+  const covered = new Set(
+    TOPICS.filter((t) => shown.some((s) => s.toLowerCase().includes(t)))
+  );
+  const out: string[] = [];
+  for (const n of notes) {
+    const topics = TOPICS.filter((t) => n.toLowerCase().includes(t));
+    // Keep anything that raises a topic nothing shown SO FAR has mentioned -
+    // including earlier notes, which is where the duplicate Tailwind paragraph
+    // was getting through.
+    if (topics.length === 0 || topics.some((t) => !covered.has(t))) {
+      out.push(n);
+      for (const t of topics) covered.add(t);
+    }
+  }
+  return out;
 }
 
 /**
@@ -170,6 +230,19 @@ function protectLines(state: BattleState): string[] {
   const dp = doubleProtect(state);
   if (dp.text) out.push(dp.text);
   for (const call of fakeOutReads(state, moveProbability)) out.push(call.text);
+  return out;
+}
+
+/** Same fact phrased twice is still one fact. */
+function dedupe(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const l of lines) {
+    const key = l.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(l);
+  }
   return out;
 }
 
@@ -246,7 +319,20 @@ function turnBrief(state: BattleState): Brief {
       ? `Best line: ${nameOf(top.attacker)} ${top.moveName}.`
       : "No action stands out.";
 
-  return { phase: "turn", headline, advice, urgent, notes };
+  // Hard caps.
+  //
+  // Every line below is individually defensible, which is exactly how a reply
+  // ends up fifteen lines long. Past about three notes nobody reads any of
+  // them mid-turn, so the marginal note does not add information - it removes
+  // it, by burying the first two. Two urgent, three notes, and anything that
+  // did not make the cut is still in the Plan and Calc tabs.
+  return {
+    phase: "turn",
+    headline,
+    advice,
+    urgent: dedupe(urgent).slice(0, 2),
+    notes: dedupe(notes).slice(0, 3),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -301,35 +387,27 @@ export function plannerBrief(
   const top = lines[0];
   if (!top) return null;
 
+  // Only things that could change what you click.
+  //
+  // How far the search looked, whether it beamed or enumerated, and what
+  // "pin vs possible" means are facts about the TOOL, not about the game. They
+  // belong in the Plan tab where you go looking for them - putting them in the
+  // reply to every move buries the two lines that actually matter under four
+  // that never do. The strength of the claim is already carried by `isPin` and
+  // `pinVsPossible`, which the UI renders as a badge.
   const notes: string[] = [];
-  const claim = top.pinVsPossible
-    ? "holds against every move they could still be holding"
-    : top.pinVsAssumed
-      ? "holds against the four moves they are assumed to run, but not against everything they could have"
-      : top.isPin
-        ? "comes out ahead in the worst case the search found"
-        : "has no guarantee - it is just the best floor available";
-
-  notes.push(
-    `Verified ${top.horizon} turn${top.horizon === 1 ? "" : "s"} ahead, ` +
-      `${top.worst.exhaustive ? "checking every reply" : "beaming their replies"}. It ${claim}.`
-  );
-  notes.push(`Their best answer: ${top.worst.replyLabel}.`);
-  if (top.reliability < 1) {
-    notes.push(
-      `This line is ${Math.round(top.reliability * 100)}% to actually connect - ` +
-        `everything above assumes it does.`
-    );
+  if (top.worst.replyLabel) notes.push(`Worst reply: ${top.worst.replyLabel}.`);
+  if (top.reliability < 0.9) {
+    notes.push(`${Math.round(top.reliability * 100)}% to connect.`);
   }
   if (top.breakers.length) {
     notes.push(
-      `Breaks if they have ${[...new Set(top.breakers.map((b) => b.moveName))].join(" or ")}.`
+      `Breaks to ${[...new Set(top.breakers.map((b) => b.moveName))].join(" or ")}.`
     );
   }
   if (top.unsimulated.length) {
     notes.push(
-      `Not simulated, judge yourself: ` +
-        `${[...new Set(top.unsimulated.map((b) => b.moveName))].join(", ")}.`
+      `Not simulated: ${[...new Set(top.unsimulated.map((b) => b.moveName))].join(", ")}.`
     );
   }
 

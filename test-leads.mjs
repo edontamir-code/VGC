@@ -134,20 +134,34 @@ console.log("\n-- what is only true on turn 1 --");
 {
   const s = board(["incineroar", "whimsicott"], ["Staraptor", "Arcanine"]);
   const r = openingRead(s);
-  check(r.turnOneOnly.some((t) => /Fake Out is live this turn only/.test(t)),
-    "their Fake Out is flagged as a turn-1-only threat");
   for (const t of r.turnOneOnly) console.log("      ", t);
 
-  // And it stops being flagged once the turn has passed.
+  // "Fake Out only works on turn one" is a rule of the game, not a read on
+  // this board. It used to be printed beside every single lead, which is how a
+  // panel stops being read at all - by the third game the real warnings are
+  // being skipped along with the boilerplate. The probability still reaches
+  // the player through the fakeOut plan; only the lecture is gone.
+  check(!r.turnOneOnly.some((t) => /only turn it works from|live this turn only/i.test(t)),
+    "the Fake Out mechanic is NOT restated on every lead");
+  check(readLeads(s).some((p) => p.kind === "fakeOut" && p.probability > 0.5),
+    "  but their Fake Out is still reported, with its probability");
+
+  // And nothing turn-1-only is claimed once the turn has passed.
   const later = reduce(s, { type: "NEXT_TURN" });
   check(openingRead(later).turnOneOnly.length === 0,
     "  and nothing turn-1-only is claimed after turn 1");
 
-  // My own Fake Out is surfaced as the cheap denial it is.
+  // My own Fake Out is surfaced only when there is something specific to stop,
+  // and it NAMES that thing - which is the part you cannot see at a glance.
   const withFO = board(["farigiraf", "sinistcha"], ["Raichu", "Sylveon"]);
-  const mineFO = openingRead(withFO).turnOneOnly.filter((t) => /can Fake Out this turn/.test(t));
-  check(mineFO.length > 0,
-    `your own Fake Out is offered as the answer to their setup: "${mineFO[0] ?? ""}"`);
+  const mineFO = openingRead(withFO).turnOneOnly.filter((t) => /Fake Out stops/.test(t));
+  check(mineFO.length > 0 && /Farigiraf/.test(mineFO[0]),
+    `my Fake Out is offered against the setter by name: "${mineFO[0] ?? ""}"`);
+
+  // With nothing to deny, it stays quiet rather than reminding me I own the move.
+  const noSetup = board(["garchomp"], ["Raichu", "Sylveon"]);
+  check(!openingRead(noSetup).turnOneOnly.some((t) => /Fake Out stops/.test(t)),
+    "  and stays silent when they have no setup to deny");
 }
 
 // ===========================================================================

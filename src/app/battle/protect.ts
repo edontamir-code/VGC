@@ -116,10 +116,10 @@ export function doubleProtect(state: BattleState): DoubleProtectRead {
 
   let text: string | null = null;
   if (available.length >= 2 && bothGuaranteed) {
-    text =
-      `Both ${available.map((r) => nameOf(r.mon)).join(" and ")} can Protect this turn and ` +
-      `both are guaranteed - the counter is per Pokemon, so they do not share it. ` +
-      `That is a free turn if you do not know what they are doing.`;
+    // The per-Pokemon counter is a rule of the format, not a read on this
+    // board, and it was being restated every single turn. What is actually
+    // board-specific is WHICH two can do it right now.
+    text = `Double Protect available: ${available.map((r) => nameOf(r.mon)).join(" + ")}, both guaranteed.`;
   } else if (available.length === 1 && available[0].guaranteed) {
     text = available[0].text;
   } else if (!bothGuaranteed) {
