@@ -153,10 +153,15 @@ export function newBattleState(customTeam?: MonSet[]): BattleState {
     turn: 1,
     mons,
     sides: {
-      me: {
-        active: [mine[0]?.uid ?? null, mine[1]?.uid ?? null],
-        bench: mine.slice(2).map((m) => m.uid),
-      },
+      // NOBODY is out until you say who you led.
+      //
+      // This used to default to the first two on the team, which put both Mega
+      // stone holders on the field before the game had started. Every read on
+      // the board was then about a lead you had not chosen and would often
+      // never play - and the tool showed it confidently, which is worse than
+      // showing nothing. Team preview comes before turn 1 in the real game, and
+      // the board should say so.
+      me: { active: [null, null], bench: mine.map((m) => m.uid) },
       opp: { active: [null, null], bench: [] },
     },
     field: {

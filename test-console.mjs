@@ -506,5 +506,52 @@ console.log("\n-- a saved team does not outlive team.js --");
     "a board still carrying Glimmora does not match the current team - so it gets discarded");
 }
 
-console.log(`\n${ok}/${total} passed`);
+// ===========================================================================
+// Nobody is out until you say who you led.
+//
+// The board used to default to the first two on the team, which put BOTH Mega
+// stone holders on the field before the game had started. Every read was then
+// about a lead you had not chosen and would often never play - and it was shown
+// confidently, which is worse than showing nothing.
+// ===========================================================================
+console.log("\n-- the board starts empty on my side --");
+{
+  const fresh = newBattleState();
+  check(fresh.sides.me.active.every((u) => u === null),
+    "a fresh board has NOBODY out for me");
+  check(fresh.sides.opp.active.every((u) => u === null),
+    "  and nobody out for them");
+  check(fresh.sides.me.bench.length === 6,
+    `  all six of mine are on the bench (${fresh.sides.me.bench.length})`);
+
+  // The console has to be able to fill it from a standing start.
+  let s = fresh;
+  const run = (t) => {
+    const r = runCommand(t, s);
+    for (const a of r.actions) s = reduce(s, a);
+    return r;
+  };
+  run("zard, chomp, incin, gambit, whims, bascu");
+  check(s.sides.me.active.every((u) => u === null),
+    "entering THEIR six does not put any of mine out");
+
+  const theirs = run("they lead zard and chomp");
+  check(theirs.kind === "leads" && s.sides.opp.active.filter(Boolean).length === 2,
+    `"they lead X and Y" puts their two out immediately: ${theirs.echo}`);
+  check(s.sides.me.active.every((u) => u === null),
+    "  and still leaves my side empty");
+
+  const ours = run("we lead arcanine and sylveon");
+  const outNames = s.sides.me.active.map((u) => (u ? activeProfile(s.mons[u]).displayName : "-"));
+  check(ours.kind === "leads" && outNames.join(", ") === "Arcanine, Sylveon",
+    `"we lead A and B" puts A and B out immediately, no Next turn needed: ${outNames.join(", ")}`);
+
+  // The specific complaint: neither Mega holder should be out unless asked for.
+  check(!outNames.some((n) => /Raichu|Staraptor/.test(n)),
+    "  and the Mega stone holders are NOT on the field just because they are first on the team");
+  check(phaseOf(s) === "turn", "the console is now in the turn phase, ready for turn 1");
+}
+
+console.log(`
+${ok}/${total} passed`);
 process.exit(ok === total ? 0 : 1);
