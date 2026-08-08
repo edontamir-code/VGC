@@ -31,7 +31,8 @@ export const MOVES = {
   "Weather Ball":  { type:"Normal",   category:"spec", power:50, weatherBall:true,
                      note:"Normal/50 normally; becomes weather type at 100 BP (sun→Fire, rain→Water, sand→Rock, snow→Ice)" },
   "Brave Bird":    { type:"Flying",   category:"phys", power:120, contact:true },
-  "Dual Wingbeat": { type:"Flying",   category:"phys", power:40,  contact:true, note:"hits twice" },
+  "Dual Wingbeat": { type:"Flying",   category:"phys", power:40,  contact:true, accuracy:90,
+                     note:"Hits twice. 90% accurate - Close Combat is the sure thing when both KO" },
   "Hurricane":     { type:"Flying",   category:"spec", power:110 },
   // Fighting
   "Close Combat":  { type:"Fighting", category:"phys", power:120, contact:true,

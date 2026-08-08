@@ -250,6 +250,8 @@ export interface PlannerBrief {
   pinVsPossible: boolean;
   /** Their best answer to it. */
   worstReply: string;
+  /** 0-1 chance every move in the line connects. */
+  reliability: number;
   /** Material at the horizon, worst case. */
   material: { me: number; opp: number };
   /** Unknown moves that would break the line. */
@@ -287,6 +289,12 @@ export function plannerBrief(
       `${top.worst.exhaustive ? "checking every reply" : "beaming their replies"}. It ${claim}.`
   );
   notes.push(`Their best answer: ${top.worst.replyLabel}.`);
+  if (top.reliability < 1) {
+    notes.push(
+      `This line is ${Math.round(top.reliability * 100)}% to actually connect - ` +
+        `everything above assumes it does.`
+    );
+  }
   if (top.breakers.length) {
     notes.push(
       `Breaks if they have ${[...new Set(top.breakers.map((b) => b.moveName))].join(" or ")}.`
@@ -310,6 +318,7 @@ export function plannerBrief(
     isPin: top.isPin,
     pinVsPossible: top.pinVsPossible,
     worstReply: top.worst.replyLabel,
+    reliability: top.reliability,
     material: top.worst.material,
     breakers: [...new Set(top.breakers.map((b) => b.moveName))],
     disagrees,

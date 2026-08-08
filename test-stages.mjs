@@ -295,5 +295,64 @@ console.log("\n-- speed control is worth what it flips, not a flat constant --")
     `a full speed flip (${DEFAULT_WEIGHTS.speedEdge * 8}) is worth less than a Pokemon (${DEFAULT_WEIGHTS.monAlive})`);
 }
 
+// ===========================================================================
+// ACCURACY: prefer the sure thing, but still take the gamble when it is the
+// only thing that wins.
+//
+// The simulator treats every move as hitting, which is right for a worst-case
+// DAMAGE guarantee and wrong for choosing between two lines. If Close Combat
+// and Dual Wingbeat both KO, the 100% move is strictly better.
+// ===========================================================================
+console.log("\n-- lines are weighted by how likely they are to work --");
+{
+  check(MOVES["Dual Wingbeat"].accuracy === 90,
+    "Dual Wingbeat is recorded at 90% (it was silently treated as a sure thing)");
+  check(MOVES["Close Combat"].accuracy === undefined,
+    "  and Close Combat has no accuracy field, so it always hits");
+
+  let s = play([
+    "whims, sinistcha, zard, chomp, bascu, incin",
+    "they lead whims and sinistcha",
+    "we lead staraptor and arcanine",
+  ]);
+  s = reduce(s, { type: "SET_MEGA", side: "me", uid: mine(s, "Staraptor").uid });
+
+  const lines = searchPlans(s, { depth: 1, myBeam: 8, theirBeam: 8, arsenal: "possible" });
+  console.log(`      top: rel ${(lines[0].reliability * 100).toFixed(0)}%  ${lines[0].label.slice(0, 52)}`);
+
+  check(lines[0].reliability === 1,
+    "the top line is one that cannot miss");
+  check(lines.every((l) => l.reliability > 0 && l.reliability <= 1),
+    "every line reports a reliability between 0 and 1");
+
+  // The ranking is the reliability-adjusted score, not the raw worst case.
+  const sorted = [...lines].every((l, i, arr) => i === 0 || arr[i - 1].rankScore >= l.rankScore);
+  check(sorted, "lines are ordered by the reliability-adjusted score");
+
+  // The two properties that matter, tested on the formula itself rather than
+  // on whichever lines this particular board happened to produce.
+  //
+  //     rank = missValue + reliability * (worst - missValue)
+  //
+  const rank = (miss, worst, rel) => miss + rel * (worst - miss);
+  const miss = 1000;
+
+  check(rank(miss, 2000, 0.9) < rank(miss, 2000, 1),
+    "the same outcome at 90% ranks below the same outcome at 100%");
+  check(rank(miss, 2000, 0.8) < rank(miss, 2000, 0.9),
+    "  and 80% below 90% - monotonic in the odds");
+  check(rank(miss, 9000, 0.5) > rank(miss, 1200, 1.0),
+    "a 50% line worth far more still beats a certain line worth little " +
+    "- reliability is a weight, not a gate");
+
+  // A miss costs you the turn AND lets their attack land, so the baseline is
+  // the value of PASSING, not of the position right now. Getting that wrong
+  // made unreliable moves look SAFER than reliable ones whenever the position
+  // was losing, which is exactly backwards.
+  const losing = -500;
+  check(rank(losing, 200, 0.5) < rank(losing, 200, 1.0),
+    "even from a losing position, a move that might miss ranks below one that cannot");
+}
+
 console.log(`\n${ok}/${total} passed`);
 process.exit(ok === total ? 0 : 1);

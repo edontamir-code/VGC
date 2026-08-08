@@ -27,6 +27,8 @@ import type { DutyMap } from "../battle/resources.ts";
 import type { Outcome } from "./evaluate.ts";
 import { activeMons } from "../battle/resolver.ts";
 import { arsenalFor, scout } from "../battle/scouting.ts";
+import { getMoveData } from "../battle/moves.ts";
+import { effectiveAccuracy } from "../battle/abilities.ts";
 import type { ArsenalMode } from "../battle/scouting.ts";
 import { activeProfile } from "../battle/stats.ts";
 
@@ -112,6 +114,31 @@ export interface PlanLine {
   horizon: number;
   /** True when every opposing set involved is confirmed. */
   deterministic: boolean;
+  /**
+   * Probability every move in this line actually connects, 0-1.
+   * 1 means nothing can miss. Reported separately from the guarantee, because
+   * "this wins if it hits" and "this wins" are different claims.
+   */
+  reliability: number;
+  /**
+   * The worst case, discounted for the chance of missing.
+   *
+   * This is what the lines are RANKED by: an expected value over hit and miss.
+   *
+   *     rank = missValue + reliability * (worstCase - missValue)
+   *
+   * `missValue` is what happens if I whiff, and getting it right matters. It is
+   * NOT the current position - a miss means I lose my turn AND their attack
+   * still lands, so it is the worst case of passing entirely. Using the current
+   * position instead made unreliable moves look SAFER than reliable ones
+   * whenever the position was losing, which is exactly backwards.
+   *
+   * Two consequences, both wanted. Between two lines that both KO, the 100%
+   * one wins outright. But a 50% Zap Cannon that is the ONLY line which gains
+   * anything still ranks first, because every alternative is measured against
+   * the same passing baseline and gains nothing either.
+   */
+  rankScore: number;
 }
 
 function labelPlan(plan: Plan, state: BattleState): string {
@@ -165,6 +192,32 @@ function beamWithDefence<T extends { plan: Plan }>(
     added++;
   }
   return picked;
+}
+
+/**
+ * How likely this plan is to actually happen, 0-1.
+ *
+ * The simulator treats every move as hitting, which is right for a worst-case
+ * DAMAGE guarantee and wrong for choosing between two lines. If Close Combat
+ * and Dual Wingbeat both KO, the 100% move is strictly better than the 90% one
+ * and the tool should say so.
+ *
+ * Deliberately not a gate. A 90% Hyper Beam that is the only line that wins is
+ * still the line that wins - see how this is used in the ranking below.
+ */
+function planReliability(plan: Plan, state: BattleState): number {
+  let p = 1;
+  for (const [uid, action] of Object.entries(plan)) {
+    const mon = state.mons[uid];
+    if (!mon || mon.side !== "me" || action.kind !== "move") continue;
+    const data = getMoveData(action.moveName);
+    if (!data) continue;
+    if (data.neverMisses) continue;
+    const target = action.targetUid ? state.mons[action.targetUid] : null;
+    const { accuracy } = effectiveAccuracy(data.accuracy, mon, target ?? mon);
+    p *= Math.max(0, Math.min(100, accuracy)) / 100;
+  }
+  return p;
 }
 
 /** A specific unknown move that turns a pin into a non-pin. */
@@ -361,6 +414,10 @@ export function searchPlans(
   });
   quick.sort((a, b) => b.immediate - a.immediate);
 
+  // What a MISS is actually worth: I lose the turn, they still get theirs.
+  // Computed once, as the worst case of passing entirely.
+  const missValue = worstCaseValue(state, {}, opts.depth, opts, duties).score;
+
   const width = Math.max(opts.myBeam * 3, 24);
   const shortlist = beamWithDefence(quick, width, Math.max(6, Math.floor(width / 3)));
 
@@ -420,6 +477,8 @@ export function searchPlans(
       }
     }
 
+    const reliability = planReliability(plan, state);
+
     return {
       plan,
       label: labelPlan(plan, state),
@@ -433,10 +492,19 @@ export function searchPlans(
       proven: isPin && worst.exhaustive && deterministic,
       horizon: opts.depth,
       deterministic,
+      reliability,
+      // Expected value over hit and miss, with a miss treated as no progress.
+      // baseScore is the do-nothing value of the current position.
+      rankScore: missValue + reliability * (worst.score - missValue),
     };
   });
 
-  return lines.sort((a, b) => b.worst.score - a.worst.score);
+  // Ranked by the reliability-adjusted score, not the raw worst case. Ties on
+  // that break towards the surer line, which is the Close Combat vs Dual
+  // Wingbeat case: if both KO, take the one that cannot miss.
+  return lines.sort(
+    (a, b) => b.rankScore - a.rankScore || b.reliability - a.reliability
+  );
 }
 
 /** The single safest plan - highest guaranteed floor. */
