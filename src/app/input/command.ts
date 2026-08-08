@@ -81,13 +81,60 @@ function leadSide(text: string): SideId | null {
   return null;
 }
 
+/**
+ * Split "they lead whims, incin, I lead raichu, staraptor" into its two
+ * statements.
+ *
+ * Both leads are one thought, so people type them as one line - and the
+ * comma between them is the same comma that separates the names, so there is
+ * no way to segment on punctuation. What actually marks a new statement is a
+ * SIDE WORD followed by a lead verb.
+ *
+ * Without this, the first verb won the whole line: "they lead" claimed
+ * everything after it, "I lead raichu" was read as a Pokemon name that did not
+ * match anything, and your side silently stayed empty.
+ *
+ * Returns null unless there are at least two statements, so the ordinary
+ * one-statement path is untouched.
+ */
+const SIDE_WORDS_SRC =
+  "i|me|my|mine|we|us|our|he|she|they|him|her|them|opp|opponent|his|their|theirs|enemy|foe";
+const LEAD_VERB_SRC =
+  "leads?|led|leading|opens?|opened|starts?|started|sends? out|sent out";
+
+function splitLeadStatements(text: string): string[] | null {
+  // A side word, then a lead verb within a word or two ("they lead",
+  // "he sent out", "I am leading").
+  const re = new RegExp(
+    `\\b(?:${SIDE_WORDS_SRC})\\b(?:\\s+\\w+){0,2}?\\s+(?:${LEAD_VERB_SRC})\\b`,
+    "gi"
+  );
+  const starts: number[] = [];
+  for (const m of text.matchAll(re)) {
+    if (m.index !== undefined) starts.push(m.index);
+  }
+  if (starts.length < 2) return null;
+
+  const out: string[] = [];
+  for (let i = 0; i < starts.length; i++) {
+    const seg = text.slice(starts[i], starts[i + 1] ?? text.length).trim();
+    // Trailing separators left behind by the cut.
+    const cleaned = seg.replace(/[\s,;+&/]+$/, "");
+    if (cleaned) out.push(cleaned);
+  }
+  return out.length >= 2 ? out : null;
+}
+
 /** Strip the side word and the verb, leaving just the names. */
 function leadNames(text: string): string[] {
   const m = text.search(LEAD_VERB);
   const tail = m >= 0 ? text.slice(m).replace(LEAD_VERB, " ") : text;
   return tail
     .split(/[,+&/]|\band\b|\bwith\b|\bplus\b/i)
-    .map((s) => s.trim())
+    // Filler words that survive the verb strip - "my lead IS raichu", "they
+    // lead WITH the whimsicott". Left attached they turn a clean name into a
+    // fuzzy match against "is raichu", which quietly loses the Pokemon.
+    .map((s) => s.trim().replace(/^(?:is|are|was|were|be|the|a|an|of|out|into)\b\s*/i, "").trim())
     .filter((s) => s.length > 0 && !/^(with|and|the|a|out|into|vs|against)$/i.test(s));
 }
 
@@ -152,6 +199,38 @@ export function runCommand(text: string, state: BattleState): CommandResult {
     kind: "empty", actions: [], echo: "", problems: [], turn: null, nextPhase: phase,
   };
   if (!trimmed) return empty;
+
+  // --- both sides' leads in one line ---------------------------------------
+  //
+  // Each statement is scored against the SAME state, which is safe here
+  // precisely because the two touch different sides: setLeads only ever reads
+  // and switches in mons belonging to the side it was given. Anything that
+  // needed the first statement's result would have to thread state through,
+  // and that is deliberately not attempted - a segment that is not a lead
+  // statement falls through to the normal one-command path below.
+  const segments = splitLeadStatements(trimmed);
+  if (segments) {
+    const sides = segments.map(leadSide);
+    if (sides.every((s): s is SideId => s !== null) && new Set(sides).size === segments.length) {
+      const actions: Action[] = [];
+      const echoes: string[] = [];
+      const problems: string[] = [];
+      segments.forEach((seg, i) => {
+        const r = setLeads(state, sides[i]!, leadNames(seg));
+        actions.push(...r.actions);
+        echoes.push(r.echo);
+        problems.push(...r.problems);
+      });
+      return {
+        kind: actions.length ? "leads" : "error",
+        actions,
+        echo: echoes.join(" "),
+        problems,
+        turn: null,
+        nextPhase: phase === "roster" ? "leads" : phase,
+      };
+    }
+  }
 
   // --- explicit leads, in any phase ---------------------------------------
   const explicit = leadSide(trimmed);

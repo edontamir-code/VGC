@@ -79,6 +79,52 @@ console.log("-- one box, three phases --");
 }
 
 // ===========================================================================
+// BOTH leads in one line. This is how people actually type it - the two leads
+// are one thought - and the comma between the statements is the same comma
+// that separates the names, so there is nothing punctuational to split on.
+//
+// The old parser took the FIRST lead verb and gave it the whole line: "they
+// lead" claimed everything after it, "I lead raichu" was read as a Pokemon
+// name that matched nothing, and your side silently stayed empty.
+// ===========================================================================
+console.log("\n-- both sides' leads in one line --");
+{
+  const { state: base } = play(["zard, incin, gambit, chomp, bascu, whims"]);
+
+  const forms = [
+    "they lead whims , incin, I lead raichu, staraptor",
+    "they lead whims and incin, we lead raichu and staraptor",
+    "I lead raichu, staraptor, they lead whims, incin", // mine stated first
+    "he sent out whims and incin, my lead is raichu and staraptor",
+  ];
+  for (const line of forms) {
+    let s = base;
+    const r = runCommand(line, s);
+    for (const a of r.actions) s = reduce(s, a);
+    const mineOut = s.sides.me.active.filter(Boolean).map((u) => nameOf(s.mons[u])).sort();
+    const theirOut = s.sides.opp.active.filter(Boolean).map((u) => nameOf(s.mons[u])).sort();
+    check(
+      mineOut.join(",") === "Raichu,Staraptor" && theirOut.join(",") === "Incineroar,Whimsicott",
+      `"${line}" sets BOTH sides: mine=[${mineOut}] theirs=[${theirOut}]`
+    );
+  }
+
+  // A single statement must still behave exactly as before - the split only
+  // fires when there are genuinely two.
+  let one = base;
+  const solo = runCommand("they lead whims and incin", one);
+  for (const a of solo.actions) one = reduce(one, a);
+  check(one.sides.me.active.every((u) => !u),
+    "  one statement still leaves the other side alone");
+
+  // Two statements for the SAME side is not two statements - it is one badly
+  // typed one, and guessing which half wins would be worse than not splitting.
+  const dupe = runCommand("they lead whims and incin, they lead gambit and chomp", base);
+  check(dupe.kind === "leads" && dupe.actions.length > 0,
+    "  two statements for the same side still resolve to something rather than erroring");
+}
+
+// ===========================================================================
 console.log("\n-- explicit intent beats the phase guess --");
 {
   const { state } = play([
