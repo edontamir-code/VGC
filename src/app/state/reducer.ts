@@ -9,7 +9,7 @@ import type {
   BattleState, Field, MonSet, MonState, Session, SideId, Stages, StageKey,
   StatusKind, TerrainKind, WeatherKind, LogEntry, Screens,
 } from "../model/types.ts";
-import { activeProfile } from "../battle/stats.ts";
+import { activeProfile, entryWeatherOf } from "../battle/stats.ts";
 import { simulateTurn } from "../sim/turn.ts";
 import { damageContradiction, narrowFromDamage } from "../battle/damageInference.ts";
 import { applyIntimidate } from "../battle/stages.ts";
@@ -109,9 +109,13 @@ function clampHP(m: MonState, hp: number): MonState {
  * A mon with Drought/Drizzle/etc. sets the weather the moment it lands on the
  * field. BATTLE_MODEL.md: "if Char Y is out with Drought, sun is up and Weather
  * Ball is Fire/100 automatically." The user can still override it afterwards.
+ *
+ * The premise of that line is "Char Y is OUT" - as the Mega. A Charizard that
+ * has not spent the Mega yet still has Blaze, so `entryWeatherOf` gates on the
+ * form actually on the field rather than on the set's Mega-form flag.
  */
 function applyEntryWeather(state: BattleState, mon: MonState): BattleState {
-  const kind = mon.set.setsWeather;
+  const kind = entryWeatherOf(mon);
   if (!kind) return state;
   if (state.field.weather?.kind === kind) return state;
   const turns = state.durations.weather;
@@ -204,7 +208,11 @@ export function reduce(state: BattleState, action: Action): BattleState {
           return log(state, `${mon.set.name} cannot Mega Evolve: ${check.reason}.`, "system");
         }
       }
-      return patchMon(state, action.uid, (m) => recomputeHP({ ...m, hasMega: !m.hasMega }));
+      const next = patchMon(state, action.uid, (m) => recomputeHP({ ...m, hasMega: !m.hasMega }));
+      // Mega Evolving swaps the ability in, and a weather ability takes effect
+      // right then - Mega Charizard Y's Drought is the whole reason Weather
+      // Ball reads Fire/100 the turn it commits.
+      return applyEntryWeather(next, next.mons[action.uid]);
     }
 
     /**

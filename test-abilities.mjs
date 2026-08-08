@@ -81,9 +81,11 @@ console.log("\n-- ability redirection --");
   const glim = mine(s, "Glimmora");
   const raichu = opp(s, "raichu");
   const zard = opp(s, "charizard-y");
-  // Raichu only has Lightning Rod BEFORE it Megas - Mega Raichu Y has No Guard.
-  // Drop it to the base form so the redirection ability is actually live.
-  s = reduce(s, { type: "TOGGLE_MEGA", uid: raichu.uid });
+  // Raichu only has Lightning Rod BEFORE it Megas - Mega Raichu has No Guard.
+  // Nothing arrives Mega Evolved any more, so the base ability is already the
+  // live one and there is nothing to toggle. (This test used to have to drop
+  // it back down, which is what made the old default visible.)
+  check(!s.mons[raichu.uid].hasMega, "Raichu starts un-Mega'd, so Lightning Rod is live");
   // Lightning Rod pulls Electric moves even with no Rage Powder in play.
   s = reduce(s, { type: "EDIT_SET", uid: glim.uid, patch: { moves: ["Thunderbolt", "Power Gem", "Sludge Bomb", "Earth Power"] } });
   const r = simulateTurn(s, {
@@ -106,6 +108,12 @@ console.log("\n-- Huge Power --");
 {
   let s = board(["mawile"], ["Kingambit", "Garchomp"]);
   const maw = opp(s, "mawile");
+
+  // Huge Power belongs to MEGA Mawile. It has to actually Mega Evolve to have
+  // it - a Mawile that has not spent the Mega is an Intimidate mon with 150
+  // Attack, not a 344-Attack one.
+  s = reduce(s, { type: "TOGGLE_MEGA", uid: maw.uid });
+  check(s.mons[maw.uid].hasMega, "Mawile Mega Evolved, so Huge Power is live");
 
   const raw = rawStats(s.mons[maw.uid]);
   const staged = stagedStats(s.mons[maw.uid]);
@@ -181,9 +189,11 @@ console.log("\n-- Mega rules --");
   check(read.holders.length === 2 && read.text && /usually bring only one/i.test(read.text),
     "the two-stone team-selection read is surfaced");
 
-  // Both start Mega'd by default, so drop one back first.
-  let one = reduce(s, { type: "TOGGLE_MEGA", uid: meta.uid });
-  check(!one.mons[meta.uid].hasMega, "Metagross reverted to base form");
+  // Neither starts Mega'd. Spend the side's Mega on Mawile, and Metagross is
+  // then locked out for the rest of the battle.
+  let one = reduce(s, { type: "TOGGLE_MEGA", uid: maw.uid });
+  check(one.mons[maw.uid].hasMega && !one.mons[meta.uid].hasMega,
+    "Mawile took the side's one Mega Evolution");
   const blocked = canMega(one, one.mons[meta.uid]);
   check(!blocked.ok && /already Mega Evolved/i.test(blocked.reason ?? ""),
     `it cannot Mega back while Mawile has: "${blocked.reason}"`);

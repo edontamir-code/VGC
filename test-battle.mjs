@@ -67,9 +67,15 @@ console.log("-- engine parity through BattleState --");
 
 // Char-Y Heat Wave in sun -> Kingambit. BUILD_BRIEF: 144.9% max, x2.
 // Weather comes from the FIELD here, not from a per-calc argument.
+//
+// The BUILD_BRIEF number is for the MEGA - SpA 159, not the base 109 - so the
+// test has to actually spend the Mega. It used to arrive Mega Evolved for
+// free, which quietly made every opposing stone holder read as its Mega from
+// the moment it was added to the board.
 {
   let s = boardWith(["charizard-y"]);
   s = setMyActive(s, "Kingambit");
+  s = reduce(s, { type: "TOGGLE_MEGA", uid: oppNamed(s, "charizard-y").uid });
   s = reduce(s, { type: "SET_WEATHER", kind: "sun" });
   const zard = oppNamed(s, "charizard-y");
   const gambit = mineNamed(s, "Kingambit");
@@ -179,12 +185,21 @@ console.log("\n-- the Weather Ball scouting case (BATTLE_MODEL.md) --");
 {
   let s = boardWith(["charizard-y"]);
   s = setMyActive(s, "Kingambit");
+
+  // Before the Mega it is a plain Charizard with Blaze - no sun. Assuming
+  // otherwise inflated every Fire calc on the board by 1.5x, and halved every
+  // Water one, for a weather condition that was not actually up.
+  check(!s.field.weather,
+    `un-Mega'd Charizard has Blaze, so no sun yet (${s.field.weather?.kind ?? "clear"})`);
+
+  s = reduce(s, { type: "TOGGLE_MEGA", uid: oppNamed(s, "charizard-y").uid });
   const zard = oppNamed(s, "charizard-y");
   const gambit = mineNamed(s, "Kingambit");
 
-  // Drought sets the field weather on entry - no per-calc weather argument.
+  // Drought sets the field weather the moment the Mega lands - no per-calc
+  // weather argument.
   check(s.field.weather && s.field.weather.kind === "sun",
-    `Char-Y's Drought put sun on the field automatically (${s.field.weather?.turnsLeft} turns)`);
+    `Mega Char-Y's Drought put sun on the field automatically (${s.field.weather?.turnsLeft} turns)`);
 
   // Swap Overheat out for Weather Ball, exactly as the user would while scouting.
   s = reduce(s, {

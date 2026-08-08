@@ -4,6 +4,7 @@ import BoardView from "./ui/BoardView.tsx";
 import FieldBar from "./ui/FieldBar.tsx";
 import LinesPanel from "./ui/LinesPanel.tsx";
 import PlanTab from "./ui/PlanTab.tsx";
+import CalcTab from "./ui/CalcTab.tsx";
 import PreviewTab from "./ui/PreviewTab.tsx";
 import LeadsPanel from "./ui/LeadsPanel.tsx";
 import ConsolePanel from "./ui/ConsolePanel.tsx";
@@ -15,12 +16,13 @@ import OptimizerTab from "./ui/OptimizerTab.tsx";
 import TurnLog from "./ui/TurnLog.tsx";
 import HistoryTab from "./ui/HistoryTab.tsx";
 
-type TabId = "battle" | "preview" | "plan" | "speed" | "team" | "sp" | "log" | "history";
+type TabId = "battle" | "calc" | "preview" | "plan" | "speed" | "team" | "sp" | "log" | "history";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "battle", label: "Battle" },
   { id: "preview", label: "Preview" },
   { id: "plan", label: "Plan" },
+  { id: "calc", label: "Calc" },
   { id: "speed", label: "Speed" },
   { id: "history", label: "History" },
   { id: "team", label: "My team" },
@@ -112,6 +114,7 @@ function Shell() {
           <LinesPanel />
         </>
       )}
+      {tab === "calc" && <CalcTab />}
       {tab === "preview" && <PreviewTab />}
       {tab === "plan" && <PlanTab />}
       {tab === "speed" && <SpeedTab />}

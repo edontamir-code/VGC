@@ -964,3 +964,141 @@ tr.is-opp td:first-child { color: var(--opp); font-weight: 600; }
   background: rgba(245, 166, 35, 0.07);
   border-color: rgba(245, 166, 35, 0.32);
 }
+
+/* ===========================================================================
+   Calc tab - the live damage calculator.
+   Read left to right: what I do, into whom, and what it totals across the
+   board. The field block sits on top because every number below assumes it.
+   =========================================================================== */
+.calc-tab { padding: 10px 8px 40px; }
+
+.calc-field {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+.calc-field h3, .calc-section h3, .calc-assume h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+.calc-fieldlist { list-style: none; margin: 0; padding: 0; }
+.calc-fieldlist li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.calc-fieldlist li:last-child { border-bottom: 0; }
+/* A timer with two turns or fewer is the one fact you can act on. */
+.calc-fieldlist li.expiring .calc-turns { color: var(--roll); font-weight: 700; }
+.calc-turns { font-family: var(--mono); color: var(--dim); min-width: 28px; }
+.calc-effect { color: var(--dimmer); font-size: 12px; }
+.calc-stage b { color: var(--accent); }
+
+.calc-section { margin-bottom: 14px; }
+/* Wide grids scroll inside themselves rather than pushing the page sideways. */
+.calc-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.calc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.calc-table thead th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--dim);
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.calc-move {
+  text-align: left;
+  font-weight: 500;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.calc-attacker { color: var(--dim); font-size: 11px; display: block; }
+.calc-movename { color: var(--text); }
+.calc-megatag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #0b0d12;
+  background: var(--accent);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+.calc-megarow { background: rgba(124, 156, 255, 0.05); }
+.calc-tag, .calc-acc {
+  font-size: 10px;
+  color: var(--dim);
+  margin-left: 6px;
+  font-family: var(--mono);
+}
+/* Anything under 100% is a real risk, not a footnote. */
+.calc-acc { color: var(--roll); }
+
+.calc-cell {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+  min-width: 74px;
+}
+.calc-pct { font-family: var(--mono); font-weight: 600; }
+.calc-sub { font-size: 9px; color: var(--dimmer); letter-spacing: 0.04em; }
+.calc-eff { color: var(--roll); }
+
+.calc-ko     { background: var(--dead-bg); }
+.calc-ko    .calc-pct { color: var(--dead); }
+.calc-roll   { background: var(--roll-bg); }
+.calc-roll  .calc-pct { color: var(--roll); }
+.calc-sash   { background: var(--roll-bg); }
+.calc-sash  .calc-pct { color: var(--roll); }
+.calc-immune { background: var(--immune-bg); }
+.calc-immune .calc-pct { color: var(--immune); }
+.calc-big    .calc-pct { color: var(--text); }
+.calc-mid    .calc-pct { color: var(--dim); }
+.calc-small  .calc-pct { color: var(--dimmer); }
+
+.calc-board {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.calc-kos {
+  display: block;
+  font-size: 9px;
+  color: var(--dead);
+  font-weight: 700;
+}
+.calc-status {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.calc-assume {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.calc-assume ul { margin: 0 0 6px; padding-left: 18px; font-size: 12px; color: var(--dim); }

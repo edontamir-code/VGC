@@ -24,7 +24,7 @@ import { effectiveAccuracy } from "./abilities.ts";
 import { outspeedVerdict } from "./speedInference.ts";
 import type { SpeedRange } from "./speedInference.ts";
 import { SETTER_MOVE, settersFor, withCondition } from "./speedConditions.ts";
-import { activeProfile } from "./stats.ts";
+import { activeProfile, setMegaForm } from "./stats.ts";
 
 export type AnswerVerdict =
   | "answer" // I win the race AND do it fast enough to matter
@@ -333,21 +333,45 @@ export function withMegaChoice(
   for (const h of holders) {
     const want = h.uid === megaUid;
     if (h.hasMega !== want) {
-      mons[h.uid] = { ...h, hasMega: want };
+      mons[h.uid] = setMegaForm(h, want);
       changed = true;
     }
   }
   return changed ? { ...state, mons } : state;
 }
 
+/**
+ * The board with every one of their stone holders projected into its Mega.
+ *
+ * At team preview nobody has Mega Evolved yet, and the battle state correctly
+ * reflects that. But "can I answer this Pokemon?" is a question about the
+ * version you will actually face, and a stone holder is going to Mega. Judging
+ * their Metagross as base Metagross says you have it covered when you do not.
+ *
+ * Only one of theirs can Mega in a real game, so this is deliberately
+ * pessimistic: it asks whether you have an answer to EACH of them individually,
+ * which is the right thing to know before you have seen which one they commit.
+ */
+function threatsAtFullPower(state: BattleState): BattleState {
+  let changed = false;
+  const mons = { ...state.mons };
+  for (const t of sideMons(state, "opp")) {
+    if (!megaCapable(t) || t.hasMega) continue;
+    mons[t.uid] = setMegaForm(t, true);
+    changed = true;
+  }
+  return changed ? { ...state, mons } : state;
+}
+
 /** The full my-team x their-team grid. */
 export function buildAnswerMatrix(state: BattleState): AnswerMatrix {
-  const mine = sideMons(state, "me");
-  const theirs = sideMons(state, "opp");
+  const projected = threatsAtFullPower(state);
+  const mine = sideMons(projected, "me");
+  const theirs = sideMons(projected, "opp");
   const cells: AnswerCell[] = [];
 
   for (const t of theirs) {
-    for (const m of mine) cells.push(answerCell(m, t, state));
+    for (const m of mine) cells.push(answerCell(m, t, projected));
   }
 
   const coverage: ThreatCoverage[] = theirs.map((t) => {

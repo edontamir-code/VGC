@@ -116,11 +116,19 @@ console.log("\n-- the brief changes with the phase --");
 // ===========================================================================
 console.log("\n-- 'Heat Wave did 82%' is a measurement of Special Attack --");
 {
-  const { state } = play([
+  const played = play([
     "zard, incin, gambit, chomp, bascu, whims",
     "they lead zard and incin",
     "we lead raichu and staraptor",
   ]);
+  // The scenario below is Heat Wave IN SUN, which only exists once Charizard
+  // has actually Mega Evolved - Drought is the Mega's ability. Before that it
+  // is a Blaze Charizard with 109 SpA and no weather, and the damage figures
+  // this test quotes are not reachable by any legal spread.
+  const state = reduce(played.state, {
+    type: "TOGGLE_MEGA",
+    uid: opp(played.state, "charizard-y").uid,
+  });
   const zard = state.mons[opp(state, "charizard-y").uid];
   const raichu = state.mons[mine(state, "Raichu").uid];
 
@@ -189,8 +197,15 @@ console.log("\n-- typing the HP numbers narrows them, live --");
   check(zard.statBounds.spa, "recording the turn wrote a Special Attack bound onto Charizard");
   console.log(`      SpA now ${zard.statBounds.spa.min}-${zard.statBounds.spa.max}`);
   const full = possibleStats(zard, "spa");
-  check(zard.statBounds.spa.min > Math.min(...full.map((o) => o.stat)),
-    "  and it is genuinely narrower than the prior");
+  const priorLo = Math.min(...full.map((o) => o.stat));
+  const priorHi = Math.max(...full.map((o) => o.stat));
+  const { min: postLo, max: postHi } = zard.statBounds.spa;
+  // A hit can narrow from EITHER end - a weaker-than-expected one caps the
+  // ceiling, a harder one raises the floor. Asserting the floor specifically
+  // only ever held because Charizard used to arrive Mega Evolved, which put
+  // the whole prior band somewhere else.
+  check(postHi - postLo < priorHi - priorLo && postLo >= priorLo && postHi <= priorHi,
+    `  and it is genuinely narrower than the prior (${priorLo}-${priorHi} -> ${postLo}-${postHi})`);
 
   check(state.log.some((l) => l.kind === "scout" && /SPA is/.test(l.text)),
     "  the deduction is written to the log in words");
@@ -216,7 +231,14 @@ console.log("\n-- the budget deduction --");
     "they lead zard and incin",
     "we lead raichu and staraptor",
   ]);
-  const zard = state.mons[opp(state, "charizard-y").uid];
+  // Mega'd, so Heat Wave is the sun-boosted 159-SpA version the SP claims
+  // below are about. An un-Mega'd Charizard's Heat Wave is small enough that
+  // 82% is consistent with almost any spread, which proves nothing either way.
+  const megaState = reduce(state, {
+    type: "TOGGLE_MEGA",
+    uid: opp(state, "charizard-y").uid,
+  });
+  const zard = megaState.mons[opp(megaState, "charizard-y").uid];
 
   check(SP_TOTAL === 66, "the budget is 66 SP across all six stats");
 
@@ -248,12 +270,12 @@ console.log("\n-- the budget deduction --");
   const n = narrowFromDamage(
     {
       attackerUid: zard.uid,
-      defenderUid: state.mons[mine(state, "Raichu").uid].uid,
+      defenderUid: megaState.mons[mine(megaState, "Raichu").uid].uid,
       moveName: "Heat Wave",
-      damage: Math.round(state.mons[mine(state, "Raichu").uid].maxHP * 0.82),
-      defenderMaxHP: state.mons[mine(state, "Raichu").uid].maxHP,
+      damage: Math.round(megaState.mons[mine(megaState, "Raichu").uid].maxHP * 0.82),
+      defenderMaxHP: megaState.mons[mine(megaState, "Raichu").uid].maxHP,
     },
-    state
+    megaState
   );
   const spa = n.find((x) => x.key === "spa");
   if (spa && Math.min(...spa.sp) === 0) {

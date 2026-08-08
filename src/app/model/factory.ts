@@ -65,16 +65,22 @@ export function setFromThreat(t: ThreatMon): MonSet {
 }
 
 /**
- * A MonState at full health.
- * `hasMega` defaults to true for mons whose `base` is already the Mega line -
- * that is the in-battle profile the data files document (team.js header).
+ * A MonState at full health, in its BASE form.
+ *
+ * `set.base` is the Mega stat line for anything holding a stone, because that
+ * is the profile the data files document. But nobody arrives Mega Evolved -
+ * not me and not them. Defaulting `hasMega` to true meant an opposing
+ * Charizard walked onto the field as Mega Charizard Y: Drought instead of
+ * Blaze (sun up, every Fire number x1.5), 159 SpA instead of 109, and its
+ * Mega already treated as spent. That made the opponent look both stronger
+ * and more committed than they were.
  */
 export function makeMonState(
   set: MonSet,
   side: SideId,
   origin: MonOrigin
 ): MonState {
-  const stats = computeStats(set.base, set.sp, set.nature);
+  const stats = computeStats(set.baseForm ?? set.base, set.sp, set.nature);
   return {
     uid: nextUid(side === "me" ? "me" : "op"),
     side,
@@ -85,7 +91,7 @@ export function makeMonState(
     stages: { ...ZERO_STAGES },
     status: null,
     itemActive: true,
-    hasMega: Boolean(set.megaName ?? set.baseForm),
+    hasMega: false,
     unburdened: false,
     fainted: false,
     turnsOnField: 0,
@@ -128,21 +134,12 @@ export function newBattleState(customTeam?: MonSet[]): BattleState {
   const sets = customTeam?.length ? customTeam : TEAM.map((m) => setFromTeam(m));
   const mine = sets.map((s) => makeMonState({ ...s }, "me", "team"));
 
-  // NOBODY has Mega Evolved at the start of a battle.
-  //
-  // Mega Evolution is an action you take during a turn, not a state you begin
-  // in. Until you take it you have the BASE form with the BASE ability, and
-  // that difference is load-bearing rather than cosmetic: Raichu is Lightning
-  // Rod - which REDIRECTS Electric moves onto it - right up until it becomes
-  // No Guard. Starting the board already Mega'd meant every ability, stat and
-  // calc for that Pokemon was wrong for as long as it had not actually Mega'd.
-  for (let i = 0; i < mine.length; i++) {
-    if (!mine[i].hasMega) continue;
-    const set = mine[i].set;
-    const stats = computeStats(set.baseForm ?? set.base, set.sp, set.nature);
-    mine[i] = { ...mine[i], hasMega: false, maxHP: stats.hp, curHP: stats.hp };
-  }
-
+  // NOBODY has Mega Evolved at the start of a battle - see makeMonState, which
+  // now enforces that for both sides rather than patching it back here for
+  // mine only. Mega Evolution is an action you take during a turn, not a state
+  // you begin in, and until you take it you have the BASE form with the BASE
+  // ability. Raichu is Lightning Rod - which REDIRECTS Electric moves onto it -
+  // right up until it becomes No Guard.
   const mons: Record<string, MonState> = {};
   for (const m of mine) mons[m.uid] = m;
 

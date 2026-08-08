@@ -6,7 +6,7 @@
 import { computeStats } from "../../engine.js";
 import { stageMult } from "../../speed.js";
 import type { Stats } from "../../engine.js";
-import type { BattleState, MonState, Stages } from "../model/types.ts";
+import type { BattleState, MonState, Stages, WeatherKind } from "../model/types.ts";
 import { preMegaProfile } from "../model/megaforms.ts";
 import { abilityStatMults, applyStatMults } from "./abilities.ts";
 
@@ -58,6 +58,49 @@ export function activeProfile(mon: MonState): ActiveProfile {
     ability: s.ability,
     immuneTypes: s.immuneTypes ?? [],
     inferred: false,
+  };
+}
+
+/**
+ * Does this Pokemon's CURRENT form set weather on entry?
+ *
+ * `set.setsWeather` describes the MEGA form, because `set` is the Mega set for
+ * anything holding a stone. Charizard Y has Drought - but only as the Mega.
+ * Reading the flag directly put the sun up the moment it switched in, which
+ * inflated every Fire number on the board by 1.5x for a turn that had no sun,
+ * and halved every Water number. It is the kind of error that makes a damage
+ * calculator worse than useless, because it is confidently wrong.
+ *
+ * A Pokemon with an unconditional weather ability (Pelipper, Torkoal) has no
+ * base form recorded and is unaffected by this gate.
+ */
+export function entryWeatherOf(mon: MonState): WeatherKind | null {
+  if (!mon.set.setsWeather) return null;
+  const megaOnly = Boolean(mon.set.baseForm || mon.set.megaName);
+  if (megaOnly && !mon.hasMega) return null;
+  return mon.set.setsWeather;
+}
+
+/**
+ * Flip a Pokemon between its base and Mega form, keeping the HP consistent.
+ *
+ * Mega Evolution changes max HP for some species, so toggling `hasMega`
+ * without recomputing leaves every percentage on the board wrong. The damage
+ * layer reads stats through `activeProfile` and would have been fine, but
+ * `curHP / maxHP` is what the UI, the KO checks and the calc grid all use.
+ *
+ * Current HP is carried across as a FRACTION, which is what Mega Evolving
+ * mid-battle actually does to a damaged Pokemon.
+ */
+export function setMegaForm(mon: MonState, hasMega: boolean): MonState {
+  if (mon.hasMega === hasMega) return mon;
+  const next = { ...mon, hasMega };
+  const stats = computeStats(activeProfile(next).base, mon.set.sp, mon.set.nature);
+  const frac = mon.maxHP > 0 ? mon.curHP / mon.maxHP : 1;
+  return {
+    ...next,
+    maxHP: stats.hp,
+    curHP: Math.max(0, Math.min(stats.hp, Math.round(stats.hp * frac))),
   };
 }
 

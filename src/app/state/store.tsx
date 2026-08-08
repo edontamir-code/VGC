@@ -14,7 +14,19 @@ import type { GameResult } from "../history/gamelog.ts";
 import { adviceFor, compareToAdvice } from "../history/advice.ts";
 import type { Action as SimAction } from "../sim/actions.ts";
 
-const STORAGE_KEY = "champions-battle-session-v1";
+/**
+ * Bumped to v2 when Mega Evolution became a turn ACTION rather than a starting
+ * state.
+ *
+ * A board saved under v1 recorded every stone holder as already Mega Evolved,
+ * because that was the default it was built with. There is no way to read that
+ * back correctly: a saved `hasMega: true` might mean "they spent their Mega" or
+ * "this app used to assume it", and the two are different games. Migrating a
+ * board whose meaning has changed is worse than starting clean, because it
+ * looks live while quietly being about the wrong Pokemon - the same reason
+ * `boardMatchesTeam` throws away a board built on a team you no longer run.
+ */
+const STORAGE_KEY = "champions-battle-session-v2";
 
 /**
  * Fill in fields added after a board was saved, so an in-progress battle is not

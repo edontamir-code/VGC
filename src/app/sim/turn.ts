@@ -23,7 +23,7 @@ import type { StageDelta } from "../battle/stages.ts";
 import { isProtect } from "./actions.ts";
 import type { Action, Plan } from "./actions.ts";
 import { effectivePriority, resolveMoveType } from "../battle/moves.ts";
-import { activeProfile } from "../battle/stats.ts";
+import { activeProfile, entryWeatherOf } from "../battle/stats.ts";
 import {
   blockedByPsychicTerrain, blockedByPranksterDark, blockedBySidePriorityGuard,
 } from "../battle/terrain.ts";
@@ -157,17 +157,27 @@ function doSwitch(state: BattleState, outUid: string, inUid: string): BattleStat
     stages: { ...ZERO_STAGES },
   });
   // A weather setter coming in resets the weather.
-  const incoming = next.mons[inUid];
-  if (incoming.set.setsWeather && next.field.weather?.kind !== incoming.set.setsWeather) {
-    next = {
-      ...next,
-      field: {
-        ...next.field,
-        weather: { kind: incoming.set.setsWeather, turnsLeft: next.durations.weather },
-      },
-    };
-  }
-  return next;
+  return applyEntryWeather(next, inUid);
+}
+
+/** Set the weather if this Pokemon's active ability calls for it. */
+function applyEntryWeather(state: BattleState, uid: string): BattleState {
+  const mon = state.mons[uid];
+  if (!mon) return state;
+  const kind = entryWeatherOf(mon);
+  if (!kind || state.field.weather?.kind === kind) return state;
+  return {
+    ...state,
+    field: {
+      ...state.field,
+      weather: { kind, turnsLeft: state.durations.weather },
+    },
+  };
+}
+
+/** Light Clay stretches both screens and Aurora Veil from 5 turns to 8. */
+function holdsLightClay(mon: MonState): boolean {
+  return (mon.set.item ?? "").toLowerCase() === "light clay";
 }
 
 /** Apply a field-setting status move (Tailwind, screens, Trick Room). */
@@ -189,17 +199,22 @@ function applyFieldMove(state: BattleState, actor: MonState, moveName: string): 
       };
     case "reflect":
     case "lightScreen":
-    case "auroraVeil":
+    case "auroraVeil": {
+      // Light Clay is the difference between a screen you play around for two
+      // turns and one that covers the whole rest of the game. 5 vs 8 turns is
+      // not a detail - it decides whether waiting it out is even a plan.
+      const turns = holdsLightClay(actor) ? d.screensClay : d.screens;
       return {
         ...state,
         field: {
           ...state.field,
           screens: {
             ...state.field.screens,
-            [actor.side]: { ...state.field.screens[actor.side], [info.sets]: d.screens },
+            [actor.side]: { ...state.field.screens[actor.side], [info.sets]: turns },
           },
         },
       };
+    }
     default:
       return state;
   }
@@ -280,7 +295,16 @@ export function simulateTurn(state: BattleState, plan: Plan, opts: SimOpts): Sim
         ` (was ${activeProfile(mon).ability})`,
     });
     // A Mega Evolving Pokemon's ability lands like a switch-in ability would.
+    // That covers Intimidate AND weather: Mega Charizard Y putting the sun up
+    // is one of the biggest single swings on turn one, and it happens BEFORE
+    // any move resolves - so every Fire and Water number this turn already
+    // accounts for it.
     s = intimidateOnEntry(s, uid);
+    s = applyEntryWeather(s, uid);
+    const wx = s.field.weather;
+    if (wx && wx.kind !== state.field.weather?.kind) {
+      events.push({ actorUid: uid, text: `${nameOf(s.mons[uid])} set ${wx.kind}` });
+    }
   }
 
   // Movers are whoever is now active with a move queued. A mon that switched
