@@ -24,7 +24,7 @@ import { resolveMatchup } from "./damage.ts";
 import { getMoveData } from "./moves.ts";
 import { effectiveAccuracy } from "./abilities.ts";
 import { STATUS_MOVES } from "./statusMoves.ts";
-import { movesFirst } from "./speed.ts";
+import { effectivePriority } from "./moves.ts";
 
 const nameOf = (m: MonState) => activeProfile(m).displayName;
 
@@ -222,15 +222,23 @@ export function comboPlays(state: BattleState, limit = 8): ComboPlay[] {
       // Two Helping Hands boost nothing.
       if (oa.isHelpingHand && ob.isHelpingHand) continue;
 
-      // Helping Hand only lands if its user moves BEFORE the partner. Priced
-      // as it actually resolves rather than assumed to work: on a slow support
-      // Pokemon it frequently does not, and that is the whole reason to check.
+      // Helping Hand is +5 - the highest priority bracket in the game, above
+      // even Protect at +4. It therefore resolves before the partner's move
+      // whatever the Speed stats say, and Trick Room does not touch it either,
+      // because Trick Room reorders WITHIN a bracket and never across one.
+      //
+      // This was written as a Speed check, which happened to give the right
+      // answer only because the priority data is correct - but it framed a
+      // certainty as a race, and the "too slow" branch it carried could never
+      // fire. The one thing that could genuinely stop the boost is the partner
+      // moving in a HIGHER bracket, so that is what gets checked.
       const helper = oa.isHelpingHand ? a : ob.isHelpingHand ? b : null;
       const helped = oa.isHelpingHand ? b : ob.isHelpingHand ? a : null;
       let boostLands = false;
       if (helper && helped) {
         const hMove = oa.isHelpingHand ? ob.moveName : oa.moveName;
-        boostLands = movesFirst(helper, helped, state, "Helping Hand", hMove).first === "a";
+        boostLands =
+          effectivePriority("Helping Hand", helper) >= effectivePriority(hMove, helped);
       }
 
       const byTarget = new Map<string, { min: number; max: number }[]>();
@@ -281,7 +289,7 @@ export function comboPlays(state: BattleState, limit = 8): ComboPlay[] {
       const broke = targets.find((t) => t.brokeSash);
       if (broke) bits.push(`plays through ${broke.name}'s Sash`);
       if (reliability < 1) bits.push(`${Math.round(reliability * 100)}% to connect`);
-      if (helper && !boostLands) bits.push(`Helping Hand is too slow to land`);
+      if (helper && !boostLands) bits.push(`the partner outpriorities the Helping Hand`);
 
       plays.push({
         actions: [oa, ob],
